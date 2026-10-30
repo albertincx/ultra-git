@@ -12,7 +12,7 @@ import {
 import { oneDark } from '@codemirror/theme-one-dark';
 import { javascript } from '@codemirror/lang-javascript';
 import { json } from '@codemirror/lang-json';
-import { MergeView, unifiedMergeView, goToNextChunk, goToPreviousChunk } from '@codemirror/merge';
+import { MergeView, unifiedMergeView, goToNextChunk, goToPreviousChunk, Chunk } from '@codemirror/merge';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import {
   search,
@@ -37,7 +37,7 @@ import {
 } from 'lucide-react';
 import { saveFileContent } from '../api';
 import { GitFileStatus } from '../types';
-import { DiffEngineType } from './diff-engines/types';
+import { DiffEngineType, DiffEngineHandle } from './diff-engines/types';
 
 const MonacoEngine = React.lazy(() => import('./diff-engines/MonacoEngine'));
 const UiwEngine = React.lazy(() => import('./diff-engines/UiwEngine'));
@@ -83,6 +83,7 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
   const mergeViewRef = useRef<MergeView | null>(null);
   const singleEditorRef = useRef<EditorView | null>(null);
   const unifiedViewRef = useRef<EditorView | null>(null);
+  const engineRef = useRef<DiffEngineHandle>(null);
 
   const [currentModified, setCurrentModified] = useState(initialModified);
   const [isDirty, setIsDirty] = useState(false);
@@ -90,9 +91,35 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
   const [isUnified, setIsUnified] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
-  // Diff Engine state
+
+  // Untracked or brand new file with no HEAD original
+  const isUntrackedOrNew = fileStatus === 'untracked' || (!original && fileStatus === 'added');
+
+  // Sync content when switching files
+  useEffect(() => {
+    setCurrentModified(initialModified);
+    setIsDirty(false);
+  }, [filePath, initialModified]);
+
+  // Immediate synchronous calculation of difference chunks so the counter is accurate instantly on load
+  useEffect(() => {
+    if (isUntrackedOrNew) {
+      setChunkCount(0);
+      return;
+    }
+    try {
+      const stateA = EditorState.create({ doc: original });
+      const stateB = EditorState.create({ doc: initialModified });
+      const chunks = Chunk.build(stateA.doc, stateB.doc, {});
+      setChunkCount(chunks ? chunks.length : 0);
+    } catch (e) {
+      console.warn('Sync chunk calculation error:', e);
+    }
+  }, [filePath, original, initialModified, isUntrackedOrNew]);
+
+  // Diff Engine state (Monaco by default)
   const [diffEngine, setDiffEngine] = useState<DiffEngineType>(() => {
-    return (localStorage.getItem('ultra_diff_engine') as DiffEngineType) || 'codemirror';
+    return (localStorage.getItem('ultra_diff_engine') as DiffEngineType) || 'monaco';
   });
 
   const handleEngineChange = (engine: DiffEngineType) => {
@@ -113,8 +140,6 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
   const [chunkCount, setChunkCount] = useState(0);
   const [currentChunkIndex, setCurrentChunkIndex] = useState(0);
 
-  // Untracked or brand new file with no HEAD original
-  const isUntrackedOrNew = fileStatus === 'untracked' || (!original && fileStatus === 'added');
 
   // Determine language extension
   const getLanguageExtension = (path: string) => {
@@ -269,9 +294,17 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
     scrollToMatch(matches[prevIdx]);
   };
 
-  // Keyboard shortcut: Cmd+S & Cmd+F
+  // Keyboard shortcut: Cmd+S, Cmd+F, F7, Shift+F7
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'F7') {
+        e.preventDefault();
+        if (e.shiftKey) {
+          handlePrevChunk();
+        } else {
+          handleNextChunk();
+        }
+      }
       if ((e.metaKey || e.ctrlKey) && e.key === 's') {
         e.preventDefault();
         handleSave();
@@ -287,7 +320,7 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [filePath, currentModified]);
+  }, [filePath, currentModified, chunkCount, diffEngine]);
 
   // Rollback a specific chunk
   const handleRevertChunk = (chunkIndex: number) => {
@@ -316,27 +349,39 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
 
   // Rollback current focused chunk
   const handleRevertCurrentChunk = () => {
-    handleRevertChunk(currentChunkIndex);
+    if (diffEngine === 'monaco' && engineRef.current) {
+      engineRef.current.revertCurrentDiff();
+    } else {
+      handleRevertChunk(currentChunkIndex);
+    }
   };
 
   // Next / Previous difference chunk
   const handleNextChunk = () => {
-    if (mergeViewRef.current) {
-      goToNextChunk(mergeViewRef.current.b);
-      setCurrentChunkIndex((prev) => (chunkCount > 0 ? (prev + 1) % chunkCount : 0));
-    } else if (unifiedViewRef.current) {
-      goToNextChunk(unifiedViewRef.current);
-      setCurrentChunkIndex((prev) => (chunkCount > 0 ? (prev + 1) % chunkCount : 0));
+    if (diffEngine === 'monaco' && engineRef.current) {
+      engineRef.current.nextDiff();
+    } else if (diffEngine === 'codemirror') {
+      if (mergeViewRef.current) {
+        goToNextChunk(mergeViewRef.current.b);
+        setCurrentChunkIndex((prev) => (chunkCount > 0 ? (prev + 1) % chunkCount : 0));
+      } else if (unifiedViewRef.current) {
+        goToNextChunk(unifiedViewRef.current);
+        setCurrentChunkIndex((prev) => (chunkCount > 0 ? (prev + 1) % chunkCount : 0));
+      }
     }
   };
 
   const handlePrevChunk = () => {
-    if (mergeViewRef.current) {
-      goToPreviousChunk(mergeViewRef.current.b);
-      setCurrentChunkIndex((prev) => (chunkCount > 0 ? (prev - 1 + chunkCount) % chunkCount : 0));
-    } else if (unifiedViewRef.current) {
-      goToPreviousChunk(unifiedViewRef.current);
-      setCurrentChunkIndex((prev) => (chunkCount > 0 ? (prev - 1 + chunkCount) % chunkCount : 0));
+    if (diffEngine === 'monaco' && engineRef.current) {
+      engineRef.current.prevDiff();
+    } else if (diffEngine === 'codemirror') {
+      if (mergeViewRef.current) {
+        goToPreviousChunk(mergeViewRef.current.b);
+        setCurrentChunkIndex((prev) => (chunkCount > 0 ? (prev - 1 + chunkCount) % chunkCount : 0));
+      } else if (unifiedViewRef.current) {
+        goToPreviousChunk(unifiedViewRef.current);
+        setCurrentChunkIndex((prev) => (chunkCount > 0 ? (prev - 1 + chunkCount) % chunkCount : 0));
+      }
     }
   };
 
@@ -709,27 +754,7 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
 
           {/* Diff Engine Selector */}
           <div style={{ width: '1px', height: '16px', background: 'var(--jb-border)', margin: '0 4px' }} />
-          <select
-            value={diffEngine}
-            onChange={(e) => handleEngineChange(e.target.value as DiffEngineType)}
-            style={{
-              height: '24px',
-              background: '#232529',
-              color: 'var(--jb-text)',
-              border: '1px solid var(--jb-border)',
-              borderRadius: '4px',
-              fontSize: '11px',
-              padding: '0 6px',
-              cursor: 'pointer',
-              outline: 'none',
-              fontWeight: 500,
-            }}
-            title="Diff Engine (CodeMirror / Monaco / UIW)"
-          >
-            <option value="codemirror">CodeMirror 6</option>
-            <option value="monaco">Monaco Editor</option>
-            <option value="uiw">UIW CodeMirror</option>
-          </select>
+          
         </div>
       </div>
 
@@ -960,6 +985,7 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
           >
             {diffEngine === 'monaco' ? (
               <MonacoEngine
+                ref={engineRef}
                 filePath={filePath}
                 fileStatus={fileStatus}
                 original={original}
@@ -970,6 +996,7 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
                 }}
                 onSaved={() => handleSave()}
                 onRollback={onRollback}
+                onDiffCount={setChunkCount}
                 isUnified={isUnified}
               />
             ) : (

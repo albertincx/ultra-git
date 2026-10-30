@@ -2,6 +2,12 @@ import { GitFileStatus } from '../../types';
 
 export type DiffEngineType = 'codemirror' | 'monaco' | 'uiw';
 
+export interface DiffEngineHandle {
+  nextDiff: () => void;
+  prevDiff: () => void;
+  revertCurrentDiff: () => void;
+}
+
 export interface DiffEngineProps {
   filePath: string;
   fileStatus?: GitFileStatus;
@@ -10,5 +16,6 @@ export interface DiffEngineProps {
   onSave: (newContent: string) => void;
   onSaved: () => void;
   onRollback: () => void;
+  onDiffCount?: (count: number) => void;
   isUnified?: boolean;
 }
