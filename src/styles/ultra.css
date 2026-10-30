@@ -226,10 +226,9 @@ code, pre, .cm-editor {
   max-height: 100% !important;
   overflow-y: auto !important;
   overflow-x: hidden !important;
+  overscroll-behavior: none !important;
   background-color: var(--jb-bg) !important;
   color: var(--jb-text) !important;
-  display: flex !important;
-  flex-direction: column !important;
 }
 
 .cm-mergeViewEditors {
@@ -239,14 +238,13 @@ code, pre, .cm-editor {
   min-height: 100% !important;
   width: 100% !important;
   overflow: visible !important;
+  overscroll-behavior: none !important;
 }
 
 .cm-mergeViewEditor {
   flex: 1 1 50% !important;
   min-width: 0 !important;
   min-height: 100% !important;
-  display: flex !important;
-  flex-direction: column !important;
   overflow: hidden !important;
 }
 
@@ -350,52 +348,7 @@ code, pre, .cm-editor {
   color: #fff;
 }
 
-/* MergeView Editors should stretch to full height with no floating scrollbars */
-.cm-mergeView {
-  height: 100% !important;
-  max-height: 100% !important;
-  overflow-y: auto !important;
-  overflow-x: hidden !important;
-  overscroll-behavior: none !important;
-  background-color: var(--jb-bg) !important;
-  color: var(--jb-text) !important;
-  display: flex !important;
-  flex-direction: column !important;
-}
-
-.cm-mergeViewEditors {
-  display: flex !important;
-  flex-direction: row !important;
-  align-items: stretch !important;
-  min-height: 100% !important;
-  width: 100% !important;
-  overflow: visible !important;
-  overscroll-behavior: none !important;
-}
-
-.cm-mergeViewEditor {
-  flex: 1 1 50% !important;
-  min-width: 0 !important;
-  min-height: 100% !important;
-  display: flex !important;
-  flex-direction: column !important;
-  overflow: hidden !important;
-}
-
-.cm-mergeView .cm-editor {
-  height: auto !important;
-  min-height: 100% !important;
-  display: flex !important;
-  flex-direction: column !important;
-  flex: 1 1 auto !important;
-}
-
 .cm-mergeView .cm-scroller {
-  flex: 1 1 auto !important;
-  min-height: 100% !important;
-  overflow-y: visible !important;
-  overflow-x: auto !important;
-  overscroll-behavior: none !important;
   font-family: 'JetBrains Mono', monospace !important;
   font-size: 13px !important;
   line-height: 1.5 !important;

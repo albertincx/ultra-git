@@ -37,6 +37,10 @@ import {
 } from 'lucide-react';
 import { saveFileContent } from '../api';
 import { GitFileStatus } from '../types';
+import { DiffEngineType } from './diff-engines/types';
+
+const MonacoEngine = React.lazy(() => import('./diff-engines/MonacoEngine'));
+const UiwEngine = React.lazy(() => import('./diff-engines/UiwEngine'));
 
 interface DiffEditorProps {
   filePath: string;
@@ -85,6 +89,16 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const [isUnified, setIsUnified] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+
+  // Diff Engine state
+  const [diffEngine, setDiffEngine] = useState<DiffEngineType>(() => {
+    return (localStorage.getItem('ultra_diff_engine') as DiffEngineType) || 'codemirror';
+  });
+
+  const handleEngineChange = (engine: DiffEngineType) => {
+    setDiffEngine(engine);
+    localStorage.setItem('ultra_diff_engine', engine);
+  };
 
   // Search in Diff state
   const [showSearch, setShowSearch] = useState(false);
@@ -328,6 +342,7 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
 
   // Render Editor / Diff
   useEffect(() => {
+    if (diffEngine !== 'codemirror') return;
     if (!containerRef.current) return;
     containerRef.current.innerHTML = '';
     setCurrentModified(initialModified);
@@ -518,20 +533,11 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
       const totalChunks = mergeView.chunks?.length || 0;
       setChunkCount(totalChunks);
 
-      // Auto-scroll to first difference chunk
+      // Auto-scroll to first difference chunk safely
       setTimeout(() => {
         try {
           if (mergeView && mergeView.chunks && mergeView.chunks.length > 0) {
-            const firstChunk = mergeView.chunks[0];
-            const targetPos = firstChunk.fromB;
-            mergeView.b.dispatch({
-              selection: { anchor: targetPos },
-              effects: EditorView.scrollIntoView(targetPos, { y: 'center' }),
-            });
-            const block = mergeView.b.lineBlockAt(targetPos);
-            if (mergeView.dom && block) {
-              mergeView.dom.scrollTop = Math.max(0, block.top - 80);
-            }
+            goToNextChunk(mergeView.b);
           }
         } catch (err) {
           console.warn('Auto-scroll to first chunk error:', err);
@@ -542,7 +548,7 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
         mergeView.destroy();
       };
     }
-  }, [filePath, original, initialModified, isUnified, isUntrackedOrNew]);
+  }, [diffEngine, filePath, original, initialModified, isUnified, isUntrackedOrNew]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
@@ -700,6 +706,30 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
           >
             <Search size={14} />
           </button>
+
+          {/* Diff Engine Selector */}
+          <div style={{ width: '1px', height: '16px', background: 'var(--jb-border)', margin: '0 4px' }} />
+          <select
+            value={diffEngine}
+            onChange={(e) => handleEngineChange(e.target.value as DiffEngineType)}
+            style={{
+              height: '24px',
+              background: '#232529',
+              color: 'var(--jb-text)',
+              border: '1px solid var(--jb-border)',
+              borderRadius: '4px',
+              fontSize: '11px',
+              padding: '0 6px',
+              cursor: 'pointer',
+              outline: 'none',
+              fontWeight: 500,
+            }}
+            title="Diff Engine (CodeMirror / Monaco / UIW)"
+          >
+            <option value="codemirror">CodeMirror 6</option>
+            <option value="monaco">Monaco Editor</option>
+            <option value="uiw">UIW CodeMirror</option>
+          </select>
         </div>
       </div>
 
@@ -899,16 +929,67 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
       ) : null}
 
       {/* Editor Body */}
-      <div
-        ref={containerRef}
-        style={{
-          flex: 1,
-          position: 'relative',
-          overflow: 'hidden',
-          display: 'flex',
-          flexDirection: 'column',
-        }}
-      />
+      {diffEngine === 'codemirror' ? (
+        <div
+          ref={containerRef}
+          style={{
+            flex: 1,
+            position: 'relative',
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
+          }}
+        />
+      ) : (
+        <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+          <React.Suspense
+            fallback={
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  height: '100%',
+                  color: 'var(--jb-text-muted)',
+                  fontSize: '13px',
+                }}
+              >
+                Loading {diffEngine === 'monaco' ? 'Monaco Editor' : 'UIW CodeMirror'}...
+              </div>
+            }
+          >
+            {diffEngine === 'monaco' ? (
+              <MonacoEngine
+                filePath={filePath}
+                fileStatus={fileStatus}
+                original={original}
+                modified={currentModified}
+                onSave={(val) => {
+                  setCurrentModified(val);
+                  setIsDirty(true);
+                }}
+                onSaved={() => handleSave()}
+                onRollback={onRollback}
+                isUnified={isUnified}
+              />
+            ) : (
+              <UiwEngine
+                filePath={filePath}
+                fileStatus={fileStatus}
+                original={original}
+                modified={currentModified}
+                onSave={(val) => {
+                  setCurrentModified(val);
+                  setIsDirty(true);
+                }}
+                onSaved={() => handleSave()}
+                onRollback={onRollback}
+                isUnified={isUnified}
+              />
+            )}
+          </React.Suspense>
+        </div>
+      )}
     </div>
   );
 };
