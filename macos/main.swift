@@ -36,7 +36,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         let config = WKWebViewConfiguration()
         config.preferences.setValue(true, forKey: "developerExtrasEnabled")
-        config.websiteDataStore = WKWebsiteDataStore.nonPersistent()
+        config.websiteDataStore = WKWebsiteDataStore.default()
 
         webView = WKWebView(frame: window.contentView!.bounds, configuration: config)
         webView.autoresizingMask = [.width, .height]

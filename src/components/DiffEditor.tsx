@@ -264,20 +264,37 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
     } else {
       // 3. Modified File: Side-by-Side MergeView
 
-      // Custom Rollback Gutter extension placed on Editor B
+      // Custom Rollback Gutter extension placed on Editor B (strictly sorted and deduplicated)
       const rollbackGutterExtension = gutter({
         class: 'cm-rollback-gutter',
         markers: (view) => {
           const builder = new RangeSetBuilder<GutterMarker>();
-          const mv = mergeViewRef.current;
-          if (mv && mv.chunks) {
-            for (let i = 0; i < mv.chunks.length; i++) {
-              const chunk = mv.chunks[i];
-              if (chunk.fromB <= view.state.doc.length) {
-                const line = view.state.doc.lineAt(chunk.fromB);
-                builder.add(line.from, line.from, new RollbackGutterMarker(() => handleRevertChunk(i)));
+          try {
+            const mv = mergeViewRef.current;
+            if (mv && mv.chunks && mv.chunks.length > 0) {
+              const markersList: { pos: number; marker: GutterMarker }[] = [];
+              const seenLines = new Set<number>();
+              for (let i = 0; i < mv.chunks.length; i++) {
+                const chunk = mv.chunks[i];
+                if (chunk && chunk.fromB <= view.state.doc.length) {
+                  const line = view.state.doc.lineAt(chunk.fromB);
+                  if (!seenLines.has(line.from)) {
+                    seenLines.add(line.from);
+                    markersList.push({
+                      pos: line.from,
+                      marker: new RollbackGutterMarker(() => handleRevertChunk(i)),
+                    });
+                  }
+                }
+              }
+              // CodeMirror requires RangeSet keys to be strictly sorted by position
+              markersList.sort((a, b) => a.pos - b.pos);
+              for (const item of markersList) {
+                builder.add(item.pos, item.pos, item.marker);
               }
             }
+          } catch (e) {
+            console.warn('Gutter marker calculation error:', e);
           }
           return builder.finish();
         },
@@ -288,9 +305,11 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
           doc: original,
           extensions: [
             lineNumbers(),
+            highlightActiveLineGutter(),
+            highlightActiveLine(),
+            keymap.of([...defaultKeymap, ...historyKeymap]),
             oneDark,
             lang,
-            EditorView.editable.of(false),
             EditorState.readOnly.of(true),
           ],
         },
@@ -357,29 +376,7 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
         }
       }, 70);
 
-      // Bulletproof scroll synchronization: prevent WebKit scroll lockup when scrolling to the end of either side
-      const mergeDom = mergeView.dom;
-      const handleWheel = (e: WheelEvent) => {
-        if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
-          const maxScroll = mergeDom.scrollHeight - mergeDom.clientHeight;
-          if (maxScroll > 0) {
-            const nextScrollTop = Math.max(0, Math.min(maxScroll, mergeDom.scrollTop + e.deltaY));
-            if (nextScrollTop !== mergeDom.scrollTop) {
-              e.preventDefault();
-              mergeDom.scrollTop = nextScrollTop;
-            }
-          }
-        }
-      };
-
-      mergeView.a.dom.addEventListener('wheel', handleWheel, { passive: false });
-      mergeView.b.dom.addEventListener('wheel', handleWheel, { passive: false });
-      mergeDom.addEventListener('wheel', handleWheel, { passive: false });
-
       return () => {
-        mergeView.a.dom.removeEventListener('wheel', handleWheel);
-        mergeView.b.dom.removeEventListener('wheel', handleWheel);
-        mergeDom.removeEventListener('wheel', handleWheel);
         mergeView.destroy();
       };
     }

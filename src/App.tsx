@@ -14,6 +14,8 @@ import {
   rollbackFile,
   setActiveRepoRoot,
   validateRepoPath,
+  fetchProjectHistory,
+  saveProjectHistory,
 } from './api';
 import { GitFile, ChangelistState, ShelfItem, ProjectTab, GitFileStatus } from './types';
 import { ProjectTabs } from './components/ProjectTabs';
@@ -77,32 +79,62 @@ export const App: React.FC = () => {
     revert: true,
   });
 
-  // Save projects to localStorage
+  // Save projects to localStorage and backend
   useEffect(() => {
     if (projects.length > 0) {
       localStorage.setItem(SAVED_PROJECTS_KEY, JSON.stringify(projects));
+      saveProjectHistory({ projects });
     }
   }, [projects]);
 
-  // Initial Load: initialize default repo tab if none saved
+  // Initial Load: initialize default repo tab and sync history
   useEffect(() => {
     const initDefault = async () => {
       try {
-        if (projects.length === 0) {
-          const info = await fetchRepoInfo();
-          const defaultTab: ProjectTab = {
-            id: 'proj_' + Date.now(),
-            repoRoot: info.repoRoot,
-            repoName: info.repoName,
-            branch: info.branch,
-          };
-          setProjects([defaultTab]);
-          setActiveProjectId(defaultTab.id);
-          setActiveRepoRoot(defaultTab.repoRoot);
-        } else {
-          const initialId = projects[0].id;
-          setActiveProjectId(initialId);
-          setActiveRepoRoot(projects[0].repoRoot);
+        const [info, history] = await Promise.all([
+          fetchRepoInfo().catch(() => null),
+          fetchProjectHistory().catch(() => null),
+        ]);
+
+        let combined: ProjectTab[] = [...projects];
+        if (history?.projects && history.projects.length > 0) {
+          for (const hp of history.projects) {
+            if (!combined.some((p) => p.repoRoot === hp.repoRoot)) {
+              combined.push(hp);
+            }
+          }
+        }
+
+        if (info && info.repoRoot) {
+          const matchIndex = combined.findIndex((p) => p.repoRoot === info.repoRoot);
+          if (matchIndex >= 0) {
+            combined[matchIndex] = {
+              ...combined[matchIndex],
+              branch: info.branch || combined[matchIndex].branch,
+              repoName: info.repoName || combined[matchIndex].repoName,
+            };
+            setActiveProjectId(combined[matchIndex].id);
+            setActiveRepoRoot(combined[matchIndex].repoRoot);
+          } else {
+            const newTab: ProjectTab = {
+              id: 'proj_' + Date.now(),
+              repoRoot: info.repoRoot,
+              repoName: info.repoName,
+              branch: info.branch,
+            };
+            combined = [newTab, ...combined];
+            setActiveProjectId(newTab.id);
+            setActiveRepoRoot(newTab.repoRoot);
+          }
+        } else if (combined.length > 0) {
+          setActiveProjectId(combined[0].id);
+          setActiveRepoRoot(combined[0].repoRoot);
+        }
+
+        setProjects(combined);
+        if (combined.length > 0) {
+          localStorage.setItem(SAVED_PROJECTS_KEY, JSON.stringify(combined));
+          saveProjectHistory({ projects: combined });
         }
       } catch (e) {
         console.error('Failed to init repository:', e);

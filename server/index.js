@@ -2,6 +2,7 @@ import http from 'http';
 import url from 'url';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 import { fileURLToPath } from 'url';
 import {
   getRepoRoot,
@@ -140,6 +141,43 @@ const server = http.createServer(async (req, res) => {
         repoName: path.basename(root),
         branch: branchInfo.branch,
       });
+    }
+
+    // Project History & Tabs persistence
+    if (pathname === '/api/projects/history') {
+      const historyFile = path.join(os.homedir(), '.webstorm_git_projects.json');
+      if (req.method === 'GET') {
+        try {
+          if (fs.existsSync(historyFile)) {
+            const raw = await fs.promises.readFile(historyFile, 'utf8');
+            return sendJson(res, 200, JSON.parse(raw));
+          }
+        } catch (e) {
+          console.error('Error reading history file:', e);
+        }
+        return sendJson(res, 200, { projects: [], recent: [] });
+      }
+
+      if (req.method === 'POST') {
+        try {
+          const body = await parseJsonBody(req);
+          let current = { projects: [], recent: [] };
+          if (fs.existsSync(historyFile)) {
+            try {
+              const raw = await fs.promises.readFile(historyFile, 'utf8');
+              current = JSON.parse(raw);
+            } catch {}
+          }
+          const updated = {
+            projects: Array.isArray(body.projects) ? body.projects : current.projects,
+            recent: Array.isArray(body.recent) ? body.recent : current.recent,
+          };
+          await fs.promises.writeFile(historyFile, JSON.stringify(updated, null, 2), 'utf8');
+          return sendJson(res, 200, { ok: true });
+        } catch (e) {
+          return sendJson(res, 500, { error: e.message });
+        }
+      }
     }
 
     // Native macOS folder picker dialog

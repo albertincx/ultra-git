@@ -1,4 +1,4 @@
-import { GitFile, ChangelistState, ShelfItem, ProjectTab, FsEntry } from './types';
+import { GitFile, ChangelistState, ShelfItem, ProjectTab, FsEntry, RecentProject } from './types';
 
 const API_BASE = '/api';
 
@@ -213,4 +213,22 @@ export async function deleteShelf(id: string): Promise<ShelfItem[]> {
     body: JSON.stringify({ id }),
   });
   return res.json();
+}
+
+export async function fetchProjectHistory(): Promise<{ projects: ProjectTab[]; recent: RecentProject[] }> {
+  try {
+    const res = await fetch(`${API_BASE}/projects/history`);
+    if (res.ok) return await res.json();
+  } catch {}
+  return { projects: [], recent: [] };
+}
+
+export async function saveProjectHistory(data: { projects?: ProjectTab[]; recent?: RecentProject[] }): Promise<void> {
+  try {
+    await fetch(`${API_BASE}/projects/history`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+  } catch {}
 }

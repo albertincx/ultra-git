@@ -55,6 +55,11 @@ code, pre, .cm-editor {
   font-size: 13px !important;
 }
 
+.cm-editor, .cm-content, .cm-line {
+  user-select: text !important;
+  -webkit-user-select: text !important;
+}
+
 /* Scrollbars */
 ::-webkit-scrollbar {
   width: 9px;
@@ -230,6 +235,7 @@ code, pre, .cm-editor {
 .cm-mergeViewEditors {
   display: flex !important;
   flex-direction: row !important;
+  align-items: stretch !important;
   min-height: 100% !important;
   width: 100% !important;
   overflow: visible !important;
@@ -238,8 +244,10 @@ code, pre, .cm-editor {
 .cm-mergeViewEditor {
   flex: 1 1 50% !important;
   min-width: 0 !important;
-  overflow-x: auto !important;
-  overflow-y: visible !important;
+  min-height: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
 }
 
 .cm-merge-a {
@@ -371,7 +379,7 @@ code, pre, .cm-editor {
   min-height: 100% !important;
   display: flex !important;
   flex-direction: column !important;
-  overflow: visible !important;
+  overflow: hidden !important;
 }
 
 .cm-mergeView .cm-editor {

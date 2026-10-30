@@ -11,9 +11,9 @@ import {
   Trash2,
 } from 'lucide-react';
 import { ProjectTab, RecentProject } from '../types';
-import { openFolderDialog } from '../api';
+import { openFolderDialog, fetchProjectHistory, saveProjectHistory } from '../api';
 
-const RECENT_PROJECTS_KEY = 'Ultra_recent_projects';
+const RECENT_PROJECTS_KEY = 'ultra_recent_projects';
 
 interface ProjectTabsProps {
   projects: ProjectTab[];
@@ -41,11 +41,26 @@ export const ProjectTabs: React.FC<ProjectTabsProps> = ({
   // Recent Projects History (Max 10)
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>(() => {
     try {
-      const saved = localStorage.getItem(RECENT_PROJECTS_KEY);
+      const saved = localStorage.getItem(RECENT_PROJECTS_KEY) || localStorage.getItem('Ultra_recent_projects');
       if (saved) return JSON.parse(saved);
     } catch {}
     return [];
   });
+
+  // Sync recent projects with server backend
+  useEffect(() => {
+    fetchProjectHistory().then((history) => {
+      if (history?.recent && history.recent.length > 0) {
+        setRecentProjects((prev) => {
+          if (prev.length === 0) {
+            localStorage.setItem(RECENT_PROJECTS_KEY, JSON.stringify(history.recent));
+            return history.recent;
+          }
+          return prev;
+        });
+      }
+    }).catch(() => {});
+  }, []);
 
   // Automatically record active project into recent history
   useEffect(() => {
@@ -63,6 +78,7 @@ export const ProjectTabs: React.FC<ProjectTabsProps> = ({
           ...filtered,
         ].slice(0, 10);
         localStorage.setItem(RECENT_PROJECTS_KEY, JSON.stringify(updated));
+        saveProjectHistory({ recent: updated });
         return updated;
       });
     }
@@ -72,6 +88,7 @@ export const ProjectTabs: React.FC<ProjectTabsProps> = ({
     setRecentProjects((prev) => {
       const updated = prev.filter((p) => p.repoRoot !== repoRoot);
       localStorage.setItem(RECENT_PROJECTS_KEY, JSON.stringify(updated));
+      saveProjectHistory({ recent: updated });
       return updated;
     });
   };
