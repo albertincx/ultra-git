@@ -1,0 +1,16 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Production build outputs
+dist/
+
+# Compiled native macOS binaries
+macos/ultraGit
+
+# OS and temporary files
+.DS_Store
+*.log
+npm-debug.log*
+pnpm-debug.log*
+pnpm-lock.yaml
