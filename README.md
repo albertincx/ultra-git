@@ -1,7 +1,11 @@
 # ⚡️ ultra Git (Mac Native)
 
-> **Ultrafast, ultralow-memory macOS Git GUI replicating the beloved *** Version Control workflow.**  
-> Built for developers who want the speed, ergonomics, and power of ultra's Git tools without launching a heavy IDE or burning 500 MB+ of RAM with Electron.
+> **Ultrafast, ultralow-memory macOS Git GUI replicating *** Version Control workflow.**  
+> Built for developers who want the speed, ergonomics, and power of WebStorm's Git tools without launching a heavy IDE or burning 500 MB+ of RAM with Electron.
+
+<p align="center">
+  <img src="docs/screenshot.png" alt="ultra Git macOS UI" width="100%" />
+</p>
 
 ---
 
