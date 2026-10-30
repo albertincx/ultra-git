@@ -7,6 +7,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "build:mac": "swiftc -O macos/main.swift -o macos/ultraGit",
+    "build:all": "pnpm run build && pnpm run build:mac",
     "preview": "vite preview",
     "server": "node server/index.js",
     "start": "node server/index.js & vite"

@@ -73,32 +73,124 @@
 
 ---
 
-## 🏁 Quick Start
+## 🏁 Quick Start & Building
 
 ### Prerequisites
 - macOS (Apple Silicon or Intel)
 - Node.js (v18+)
 - pnpm (`npm install -g pnpm`)
-- Xcode Command Line Tools (`xcode-select --install` for `swiftc`)
+- Xcode Command Line Tools (`xcode-select --install` to provide `swiftc`)
 
-### Installation & Run
+---
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/your-username/ultra-git.git
-   cd ultra-git
-   ```
+### Option 1: Automatic Build & Run (Recommended)
 
-2. Install dependencies:
-   ```bash
-   pnpm install
-   ```
+Just run the launch script. It automatically builds the frontend and compiles the macOS binary if they are not already built:
 
-3. Launch the app:
-   ```bash
-   ./run.sh [optional/path/to/repo]
-   ```
-   *(If no path is provided, it opens the current directory).*
+```bash
+# 1. Clone the repository
+git clone https://github.com/your-username/ultra-git.git
+cd ultra-git
+
+# 2. Install dependencies
+pnpm install
+
+# 3. Launch (opens current repo or specified path)
+./run.sh [optional/path/to/repo]
+```
+
+---
+
+### Option 2: Manual Step-by-Step Build
+
+If you prefer building each component manually or creating a standalone binary:
+
+#### 1. Build the Web Frontend
+Compiles TypeScript and bundles production assets via Vite:
+```bash
+pnpm run build
+```
+*Output: `dist/` directory containing minified HTML, CSS, and JS (build time: ~180ms).*
+
+#### 2. Compile the Native macOS Binary
+Compiles the lightweight Swift app using Apple's native `swiftc` compiler:
+```bash
+# Direct compilation with optimizations:
+swiftc -O macos/main.swift -o macos/ultraGit
+
+# Or via npm script:
+pnpm run build:mac
+```
+*Output: `macos/ultraGit` (single native Mach-O executable, ~75 KB, 0 external runtime dependencies).*
+
+#### 3. Build All in One Step
+```bash
+pnpm run build:all
+```
+
+#### 4. Run the Local Backend & Native Window Manually
+```bash
+# Start backend server for your repository:
+node server/index.js /path/to/your/project &
+
+# Launch native macOS window:
+./macos/ultraGit "http://127.0.0.1:3737"
+```
+*(You can also simply navigate to `http://127.0.0.1:3737` in Chrome, Safari, or Arc).*
+
+---
+
+### Option 3: Development Mode (Hot Reloading)
+
+For developing or contributing to the frontend with instant Hot Module Replacement (HMR):
+
+```bash
+# Terminal 1: Start local Git API backend
+pnpm run server
+
+# Terminal 2: Start Vite Dev Server with HMR
+pnpm run dev
+```
+Open the printed Vite URL (e.g. `http://localhost:5173`) in your browser. All frontend changes will reload instantly.
+
+---
+
+### 📦 Optional: Packaging into a macOS `.app` Bundle
+
+If you want to drag **ultra Git** into your macOS `/Applications` folder:
+
+```bash
+# Create app bundle structure
+mkdir -p "ultra Git.app/Contents/MacOS"
+mkdir -p "ultra Git.app/Contents/Resources"
+
+# Copy compiled native binary
+cp macos/ultraGit "ultra Git.app/Contents/MacOS/ultraGit"
+
+# Create minimal Info.plist
+cat << 'EOF' > "ultra Git.app/Contents/Info.plist"
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleExecutable</key>
+    <string>ultraGit</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.ultragit.app</string>
+    <key>CFBundleName</key>
+    <string>ultra Git</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0.0</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>12.0</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+</dict>
+</plist>
+EOF
+```
 
 ---
 
