@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { EditorState, RangeSetBuilder } from '@codemirror/state';
 import {
   EditorView,
@@ -15,6 +15,13 @@ import { json } from '@codemirror/lang-json';
 import { MergeView, unifiedMergeView, goToNextChunk, goToPreviousChunk } from '@codemirror/merge';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import {
+  search,
+  setSearchQuery as setCmSearchQuery,
+  SearchQuery,
+  SearchCursor,
+  highlightSelectionMatches,
+} from '@codemirror/search';
+import {
   Save,
   ChevronDown,
   ChevronUp,
@@ -24,6 +31,9 @@ import {
   FileCode,
   PlusCircle,
   Undo2,
+  Search,
+  X,
+  CaseSensitive,
 } from 'lucide-react';
 import { saveFileContent } from '../api';
 import { GitFileStatus } from '../types';
@@ -76,6 +86,15 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
   const [isUnified, setIsUnified] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
+  // Search in Diff state
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [matchCase, setMatchCase] = useState(false);
+  const [searchScope, setSearchScope] = useState<'both' | 'left' | 'right'>('both');
+  const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
+  const [matches, setMatches] = useState<{ side: 'a' | 'b' | 'single'; from: number; to: number; line: number }[]>([]);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
   // Chunks info for toolbar
   const [chunkCount, setChunkCount] = useState(0);
   const [currentChunkIndex, setCurrentChunkIndex] = useState(0);
@@ -96,7 +115,8 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
     const text = contentToSave !== undefined ? contentToSave : currentModified;
     setIsSaving(true);
     try {
-      await saveFileContent(filePath, text);
+      const targetSavePath = filePath.includes(' ↔ ') ? filePath.split(' ↔ ')[1] : filePath;
+      await saveFileContent(targetSavePath, text);
       setIsDirty(false);
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 2000);
@@ -109,12 +129,146 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
     }
   };
 
-  // Keyboard shortcut: Cmd+S
+  // Scroll to match and center line in view
+  const scrollToMatch = useCallback((match: { side: 'a' | 'b' | 'single'; from: number; to: number }) => {
+    if (!match) return;
+    try {
+      if (mergeViewRef.current) {
+        const mv = mergeViewRef.current;
+        const targetView = match.side === 'a' ? mv.a : mv.b;
+        targetView.dispatch({
+          selection: { anchor: match.from, head: match.to },
+        });
+        const block = targetView.lineBlockAt(match.from);
+        if (mv.dom && block) {
+          mv.dom.scrollTop = Math.max(0, block.top - 120);
+        }
+      } else if (singleEditorRef.current) {
+        const view = singleEditorRef.current;
+        view.dispatch({
+          selection: { anchor: match.from, head: match.to },
+        });
+        const block = view.lineBlockAt(match.from);
+        if (view.scrollDOM && block) {
+          view.scrollDOM.scrollTop = Math.max(0, block.top - 120);
+        }
+      } else if (unifiedViewRef.current) {
+        const view = unifiedViewRef.current;
+        view.dispatch({
+          selection: { anchor: match.from, head: match.to },
+        });
+        const block = view.lineBlockAt(match.from);
+        if (view.scrollDOM && block) {
+          view.scrollDOM.scrollTop = Math.max(0, block.top - 120);
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to scroll to match:', e);
+    }
+  }, []);
+
+  // Perform search across editors
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setMatches([]);
+      setCurrentMatchIndex(0);
+      const clearQuery = setCmSearchQuery.of(new SearchQuery({ search: '' }));
+      if (mergeViewRef.current) {
+        mergeViewRef.current.a.dispatch({ effects: clearQuery });
+        mergeViewRef.current.b.dispatch({ effects: clearQuery });
+      }
+      if (singleEditorRef.current) singleEditorRef.current.dispatch({ effects: clearQuery });
+      if (unifiedViewRef.current) unifiedViewRef.current.dispatch({ effects: clearQuery });
+      return;
+    }
+
+    const queryEffect = setCmSearchQuery.of(
+      new SearchQuery({
+        search: searchQuery,
+        caseSensitive: matchCase,
+      })
+    );
+
+    const foundMatches: { side: 'a' | 'b' | 'single'; from: number; to: number; line: number }[] = [];
+
+    const findInDoc = (doc: any, side: 'a' | 'b' | 'single') => {
+      try {
+        const cursor = new SearchCursor(doc, searchQuery, 0, doc.length, matchCase ? undefined : (x) => x.toLowerCase());
+        while (!cursor.next().done) {
+          const line = doc.lineAt(cursor.value.from).number;
+          foundMatches.push({
+            side,
+            from: cursor.value.from,
+            to: cursor.value.to,
+            line,
+          });
+        }
+      } catch (err) {
+        console.warn('Search in doc error:', err);
+      }
+    };
+
+    if (mergeViewRef.current) {
+      const mv = mergeViewRef.current;
+      mv.a.dispatch({ effects: queryEffect });
+      mv.b.dispatch({ effects: queryEffect });
+
+      if (searchScope === 'both' || searchScope === 'left') {
+        findInDoc(mv.a.state.doc, 'a');
+      }
+      if (searchScope === 'both' || searchScope === 'right') {
+        findInDoc(mv.b.state.doc, 'b');
+      }
+    } else if (singleEditorRef.current) {
+      const view = singleEditorRef.current;
+      view.dispatch({ effects: queryEffect });
+      findInDoc(view.state.doc, 'single');
+    } else if (unifiedViewRef.current) {
+      const view = unifiedViewRef.current;
+      view.dispatch({ effects: queryEffect });
+      findInDoc(view.state.doc, 'single');
+    }
+
+    foundMatches.sort((m1, m2) => {
+      if (m1.line !== m2.line) return m1.line - m2.line;
+      return m1.from - m2.from;
+    });
+
+    setMatches(foundMatches);
+    setCurrentMatchIndex(0);
+    if (foundMatches.length > 0) {
+      scrollToMatch(foundMatches[0]);
+    }
+  }, [searchQuery, matchCase, searchScope, scrollToMatch]);
+
+  const handleNextMatch = () => {
+    if (matches.length === 0) return;
+    const nextIdx = (currentMatchIndex + 1) % matches.length;
+    setCurrentMatchIndex(nextIdx);
+    scrollToMatch(matches[nextIdx]);
+  };
+
+  const handlePrevMatch = () => {
+    if (matches.length === 0) return;
+    const prevIdx = (currentMatchIndex - 1 + matches.length) % matches.length;
+    setCurrentMatchIndex(prevIdx);
+    scrollToMatch(matches[prevIdx]);
+  };
+
+  // Keyboard shortcut: Cmd+S & Cmd+F
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 's') {
         e.preventDefault();
         handleSave();
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
+        e.preventDefault();
+        setShowSearch(true);
+        setTimeout(() => {
+          searchInputRef.current?.focus();
+          searchInputRef.current?.select();
+        }, 50);
       }
     };
     window.addEventListener('keydown', onKeyDown);
@@ -194,6 +348,8 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
           keymap.of([...defaultKeymap, ...historyKeymap]),
           oneDark,
           lang,
+          search({ top: false }),
+          highlightSelectionMatches(),
           EditorView.updateListener.of((update) => {
             if (update.docChanged) {
               const newDoc = update.state.doc.toString();
@@ -230,6 +386,8 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
           keymap.of([...defaultKeymap, ...historyKeymap]),
           oneDark,
           lang,
+          search({ top: false }),
+          highlightSelectionMatches(),
           unifiedMergeView({
             original,
             highlightChanges: true,
@@ -310,6 +468,8 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
             keymap.of([...defaultKeymap, ...historyKeymap]),
             oneDark,
             lang,
+            search({ top: false }),
+            highlightSelectionMatches(),
             EditorState.readOnly.of(true),
           ],
         },
@@ -324,6 +484,8 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
             keymap.of([...defaultKeymap, ...historyKeymap]),
             oneDark,
             lang,
+            search({ top: false }),
+            highlightSelectionMatches(),
             EditorView.updateListener.of((update) => {
               if (update.docChanged) {
                 const newDoc = update.state.doc.toString();
@@ -519,8 +681,183 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
               </button>
             </>
           )}
+
+          {/* Find in Diff button */}
+          <div style={{ width: '1px', height: '16px', background: 'var(--jb-border)', margin: '0 4px' }} />
+          <button
+            className={`jb-icon-btn ${showSearch ? 'active' : ''}`}
+            onClick={() => {
+              const next = !showSearch;
+              setShowSearch(next);
+              if (next) {
+                setTimeout(() => {
+                  searchInputRef.current?.focus();
+                  searchInputRef.current?.select();
+                }, 50);
+              }
+            }}
+            title="Find in Diff (Cmd+F)"
+          >
+            <Search size={14} />
+          </button>
         </div>
       </div>
+
+      {/* JetBrains-style Diff Search Bar */}
+      {showSearch && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            height: '36px',
+            padding: '0 12px',
+            background: '#2b2d30',
+            borderBottom: '1px solid var(--jb-border)',
+            fontSize: '12px',
+            gap: '8px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, maxWidth: '680px' }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                background: 'var(--jb-bg)',
+                border: '1px solid var(--jb-border)',
+                borderRadius: '4px',
+                padding: '2px 8px',
+                height: '24px',
+                flex: 1,
+              }}
+            >
+              <Search size={13} color="var(--jb-text-dim)" />
+              <input
+                ref={searchInputRef}
+                type="text"
+                placeholder="Find in diff (Enter next, Shift+Enter prev)..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (e.shiftKey) handlePrevMatch();
+                    else handleNextMatch();
+                  } else if (e.key === 'Escape') {
+                    setShowSearch(false);
+                  }
+                }}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  outline: 'none',
+                  color: '#fff',
+                  fontSize: '12px',
+                  width: '100%',
+                }}
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  style={{ background: 'none', border: 'none', color: 'var(--jb-text-dim)', cursor: 'pointer', padding: 0 }}
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+
+            {/* Scope Pill (Both / Left / Right) */}
+            {!isUntrackedOrNew && (
+              <div
+                style={{
+                  display: 'flex',
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  borderRadius: '4px',
+                  padding: '1px',
+                  border: '1px solid var(--jb-border)',
+                }}
+              >
+                <button
+                  className={`jb-scope-btn ${searchScope === 'both' ? 'active' : ''}`}
+                  onClick={() => setSearchScope('both')}
+                  title="Search in both Left (HEAD) and Right (Working copy)"
+                >
+                  Both
+                </button>
+                <button
+                  className={`jb-scope-btn ${searchScope === 'left' ? 'active' : ''}`}
+                  onClick={() => setSearchScope('left')}
+                  title="Search only in Left pane (HEAD / Base)"
+                >
+                  Left
+                </button>
+                <button
+                  className={`jb-scope-btn ${searchScope === 'right' ? 'active' : ''}`}
+                  onClick={() => setSearchScope('right')}
+                  title="Search only in Right pane (Local Working Copy)"
+                >
+                  Right
+                </button>
+              </div>
+            )}
+
+            {/* Match Case Toggle */}
+            <button
+              className={`jb-icon-btn ${matchCase ? 'active' : ''}`}
+              style={{ width: '24px', height: '24px' }}
+              onClick={() => setMatchCase(!matchCase)}
+              title={matchCase ? 'Match Case (Active)' : 'Match Case'}
+            >
+              <CaseSensitive size={14} />
+            </button>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            {/* Matches count */}
+            <span style={{ fontSize: '11px', color: matches.length > 0 ? 'var(--jb-text-muted)' : 'var(--jb-git-conflict)', minWidth: '70px', textAlign: 'right' }}>
+              {searchQuery.trim()
+                ? matches.length > 0
+                  ? `${currentMatchIndex + 1} of ${matches.length}`
+                  : 'No matches'
+                : ''}
+            </span>
+
+            {/* Prev / Next Match buttons */}
+            <button
+              className="jb-icon-btn"
+              style={{ width: '24px', height: '24px' }}
+              onClick={handlePrevMatch}
+              disabled={matches.length === 0}
+              title="Previous Match (Shift+Enter)"
+            >
+              <ChevronUp size={14} />
+            </button>
+            <button
+              className="jb-icon-btn"
+              style={{ width: '24px', height: '24px' }}
+              onClick={handleNextMatch}
+              disabled={matches.length === 0}
+              title="Next Match (Enter)"
+            >
+              <ChevronDown size={14} />
+            </button>
+
+            {/* Close Search bar */}
+            <button
+              className="jb-icon-btn"
+              style={{ width: '24px', height: '24px' }}
+              onClick={() => {
+                setShowSearch(false);
+                setSearchQuery('');
+              }}
+              title="Close Search (Escape)"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Pane headers */}
       {isUntrackedOrNew ? (

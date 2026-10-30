@@ -405,6 +405,39 @@ code, pre, .cm-editor {
   padding-bottom: 90px !important;
 }
 
+/* CodeMirror Search Highlights */
+.cm-searchMatch {
+  background-color: rgba(234, 179, 8, 0.35) !important;
+  border-bottom: 2px solid #eab308 !important;
+  border-radius: 2px;
+}
+.cm-searchMatch-selected {
+  background-color: rgba(234, 179, 8, 0.85) !important;
+  color: #000000 !important;
+  border-radius: 2px;
+}
+
+/* Diff Search Scope Buttons */
+.jb-scope-btn {
+  background: transparent;
+  border: none;
+  color: var(--jb-text-dim);
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.1s ease;
+}
+.jb-scope-btn:hover {
+  color: var(--jb-text);
+  background: rgba(255, 255, 255, 0.05);
+}
+.jb-scope-btn.active {
+  color: #ffffff;
+  background: var(--jb-accent);
+  font-weight: 500;
+}
+
 /* Standalone / Unified Editor */
 .cm-editor:not(.cm-mergeView *) {
   height: 100% !important;
