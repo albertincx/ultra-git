@@ -225,6 +225,24 @@ Feel free to open an issue or submit a Pull Request!
 
 ---
 
+## ⚠️ Disclaimer & Responsibility / Отказ от ответственности
+
+> **English:**
+> **ultra Git** is a developer tool that directly interacts with your Git repositories, file system, and working tree (performing file edits, staging, commits, rollbacks, and shelving).
+> 
+> * **Git Version Control & Rollbacks:** Because this tool operates on top of standard Git, all committed history can be tracked and rolled back using Git's built-in commands (`git log`, `git reflog`, `git revert`, `git reset`).
+> * **User Responsibility:** You are solely responsible for any changes made to your files, working tree, and repositories. Be aware that uncommitted changes rolled back via the rollback button (`↩`) or discarded cannot always be recovered by Git. Always ensure you have appropriate backups or stashes of sensitive work.
+> * **"AS IS" Basis:** This software is provided "as is", without warranty of any kind, express or implied. The authors and contributors shall not be held liable for any data loss, unintended modifications, or repository issues arising from the use of this application.
+
+> **Русский:**
+> Приложение **ultra Git** напрямую работает с вашей локальной файловой системой и Git-репозиториями (редактирование файлов на диске, коммиты, откат изменений, перемещение файлов, шелвинг).
+> 
+> * **Откат и безопасность Git:** Поскольку приложение работает поверх стандартного Git, все зафиксированные коммиты сохраняются в истории Git и в любой момент могут быть проверены, отменены или возвращены с помощью стандартных механизмов Git (`git reflog`, `git reset`, `git revert`, `git checkout`).
+> * **Ваша ответственность:** Любые операции с кодом, включая откат незакомиченных изменений, прямое сохранение правок на диск и манипуляции с ветками, находятся полностью под вашей личной ответственностью. Несохраненные или незакомиченные изменения после выполнения отката (rollback) могут быть утеряны безвозвратно.
+> * **Отказ от претензий:** Программное обеспечение предоставляется по принципу «как есть» (AS IS), без каких-либо явных или подразумеваемых гарантий. Создатели и контрибьюторы не несут ответственности за возможную потерю данных, сбои или нежелательные изменения в ваших репозиториях.
+
+---
+
 ## 📄 License
 
 MIT License. Free to use, modify, and distribute.
