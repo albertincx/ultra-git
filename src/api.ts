@@ -245,6 +245,50 @@ export async function openInFinder(filePath: string): Promise<void> {
   }
 }
 
+// App Update APIs
+export interface UpdateInfo {
+  currentVersion: string;
+  latestVersion: string;
+  tagName?: string;
+  hasUpdate: boolean;
+  downloadUrl: string;
+  releaseUrl: string;
+  releaseNotes?: string;
+  publishedAt?: string;
+  releaseName?: string;
+  error?: string;
+  message?: string;
+}
+
+export async function fetchAppVersion(): Promise<{ version: string; repo: string; githubUrl: string }> {
+  try {
+    const res = await fetch(`${API_BASE}/app/version`);
+    if (res.ok) return await res.json();
+  } catch {}
+  return { version: '1.0.0', repo: 'albertincx/ultra-git', githubUrl: 'https://github.com/albertincx/ultra-git' };
+}
+
+export async function checkAppUpdates(): Promise<UpdateInfo> {
+  const res = await fetch(`${API_BASE}/app/check-updates`);
+  if (!res.ok) {
+    throw new Error('Failed to check for updates from GitHub');
+  }
+  return res.json();
+}
+
+export async function openExternalUrl(url: string): Promise<void> {
+  try {
+    await fetch(`${API_BASE}/app/open-url`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    });
+  } catch {}
+  try {
+    window.open(url, '_blank', 'noopener,noreferrer');
+  } catch {}
+}
+
 // Terminal APIs
 export async function fetchTerminalInfo(sessionId = 'default'): Promise<{ cwd: string; repoRoot: string; repoName: string }> {
   const res = await fetch(`${API_BASE}/terminal/info?sessionId=${encodeURIComponent(sessionId)}`, {

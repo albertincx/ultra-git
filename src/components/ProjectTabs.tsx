@@ -10,9 +10,11 @@ import {
   Clock,
   Trash2,
   Copy,
+  Sparkles,
 } from 'lucide-react';
 import { ProjectTab, RecentProject } from '../types';
 import { openFolderDialog, fetchProjectHistory, saveProjectHistory, openInFinder } from '../api';
+import { UpdateModal } from './UpdateModal';
 
 const RECENT_PROJECTS_KEY = 'ultra_recent_projects';
 
@@ -34,6 +36,7 @@ export const ProjectTabs: React.FC<ProjectTabsProps> = ({
   onRefresh,
 }) => {
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [newPath, setNewPath] = useState('');
   const [addError, setAddError] = useState('');
   const [isAdding, setIsAdding] = useState(false);
@@ -321,6 +324,23 @@ export const ProjectTabs: React.FC<ProjectTabsProps> = ({
             WebkitAppRegion: 'no-drag',
           } as React.CSSProperties}
         >
+          <button
+            className="jb-btn-secondary"
+            style={{
+              height: '24px',
+              padding: '0 8px',
+              fontSize: '11px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '5px',
+            }}
+            onClick={() => setShowUpdateModal(true)}
+            title="Check for Updates"
+          >
+            <Sparkles size={12} color="var(--jb-accent)" />
+            <span>Check for Updates</span>
+          </button>
+
           <button className="jb-icon-btn" onClick={onRefresh} title="Refresh Git Status (F5)">
             <RotateCw size={13} />
           </button>
@@ -571,6 +591,8 @@ export const ProjectTabs: React.FC<ProjectTabsProps> = ({
           </div>
         </div>
       )}
+      {/* Update Modal */}
+      <UpdateModal isOpen={showUpdateModal} onClose={() => setShowUpdateModal(false)} />
     </>
   );
 };

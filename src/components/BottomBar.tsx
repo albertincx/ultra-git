@@ -120,6 +120,7 @@ export const BottomBar: React.FC<BottomBarProps> = ({
 
         <span style={{ color: 'var(--jb-text-dim)' }}>UTF-8</span>
         <span style={{ color: 'var(--jb-text-dim)' }}>LF</span>
+        <span style={{ color: 'var(--jb-text-dim)', fontSize: '10px' }}>v1.0.0</span>
       </div>
     </div>
   );
