@@ -9,9 +9,10 @@ import {
   FolderSearch,
   Clock,
   Trash2,
+  Copy,
 } from 'lucide-react';
 import { ProjectTab, RecentProject } from '../types';
-import { openFolderDialog, fetchProjectHistory, saveProjectHistory } from '../api';
+import { openFolderDialog, fetchProjectHistory, saveProjectHistory, openInFinder } from '../api';
 
 const RECENT_PROJECTS_KEY = 'ultra_recent_projects';
 
@@ -37,6 +38,17 @@ export const ProjectTabs: React.FC<ProjectTabsProps> = ({
   const [addError, setAddError] = useState('');
   const [isAdding, setIsAdding] = useState(false);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; path: string } | null>(null);
+
+  useEffect(() => {
+    const handleClose = () => setContextMenu(null);
+    window.addEventListener('click', handleClose);
+    window.addEventListener('scroll', handleClose, true);
+    return () => {
+      window.removeEventListener('click', handleClose);
+      window.removeEventListener('scroll', handleClose, true);
+    };
+  }, []);
 
   // Recent Projects History (Max 10)
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>(() => {
@@ -216,6 +228,15 @@ export const ProjectTabs: React.FC<ProjectTabsProps> = ({
                   borderRight: !isActive ? '1px solid rgba(255, 255, 255, 0.05)' : 'none',
                 }}
                 onClick={() => onSelectProject(proj.id)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setContextMenu({
+                    x: Math.min(e.clientX, window.innerWidth - 210),
+                    y: Math.min(e.clientY, window.innerHeight - 100),
+                    path: proj.repoRoot,
+                  });
+                }}
                 title={`${proj.repoName} — ${proj.repoRoot}`}
                 className="jb-project-tab"
               >
@@ -511,6 +532,42 @@ export const ProjectTabs: React.FC<ProjectTabsProps> = ({
                 {isAdding ? 'Opening...' : 'Open Project'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {/* Context Menu */}
+      {contextMenu && (
+        <div
+          className="jb-context-menu"
+          style={{ top: contextMenu.y, left: contextMenu.x }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div
+            className="jb-menu-item"
+            onClick={async () => {
+              setContextMenu(null);
+              try {
+                await openInFinder(contextMenu.path);
+              } catch (e: any) {
+                alert(e.message || 'Failed to open in Finder');
+              }
+            }}
+          >
+            <FolderSearch size={14} color="var(--jb-accent)" />
+            <span>Open in Finder</span>
+          </div>
+
+          <div className="jb-menu-separator" />
+
+          <div
+            className="jb-menu-item"
+            onClick={() => {
+              navigator.clipboard.writeText(contextMenu.path);
+              setContextMenu(null);
+            }}
+          >
+            <Copy size={13} />
+            <span>Copy Path</span>
           </div>
         </div>
       )}

@@ -474,3 +474,55 @@ code, pre, .cm-editor {
     transform: scale(0.85);
   }
 }
+
+/* Context Menu */
+.jb-context-menu {
+  position: fixed;
+  background: #2b2d30;
+  border: 1px solid var(--jb-border);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6), 0 0 1px rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  padding: 4px;
+  z-index: 2000;
+  font-size: 12px;
+  min-width: 190px;
+  user-select: none;
+  animation: jb-menu-fade 0.08s ease-out;
+}
+
+@keyframes jb-menu-fade {
+  from { opacity: 0; transform: scale(0.97); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.jb-menu-item {
+  padding: 6px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--jb-text);
+  transition: background 0.08s, color 0.08s;
+  font-size: 12px;
+}
+
+.jb-menu-item:hover {
+  background: var(--jb-selection-bg);
+  color: #ffffff;
+}
+
+.jb-menu-item.danger {
+  color: var(--jb-git-conflict);
+}
+
+.jb-menu-item.danger:hover {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+}
+
+.jb-menu-separator {
+  height: 1px;
+  background: var(--jb-border);
+  margin: 4px 2px;
+}

@@ -34,8 +34,9 @@ import {
   Search,
   X,
   CaseSensitive,
+  FolderSearch,
 } from 'lucide-react';
-import { saveFileContent } from '../api';
+import { saveFileContent, openInFinder } from '../api';
 import { GitFileStatus } from '../types';
 import { DiffEngineType, DiffEngineHandle } from './diff-engines/types';
 
@@ -611,7 +612,21 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <FileCode size={16} color="var(--jb-text-muted)" />
-          <span style={{ fontWeight: 600, color: 'var(--jb-text)' }}>{filePath}</span>
+          <span
+            style={{ fontWeight: 600, color: 'var(--jb-text)', cursor: 'pointer' }}
+            onClick={() => openInFinder(filePath)}
+            title="Click to reveal in Finder"
+          >
+            {filePath}
+          </span>
+          <button
+            className="jb-icon-btn"
+            style={{ width: '22px', height: '22px' }}
+            onClick={() => openInFinder(filePath)}
+            title="Open in Finder"
+          >
+            <FolderSearch size={13} />
+          </button>
 
           {isUntrackedOrNew ? (
             <span

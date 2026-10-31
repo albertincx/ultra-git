@@ -1,6 +1,7 @@
 import React from 'react';
 import { Terminal, GitBranch, Layers, FolderGit2 } from 'lucide-react';
 import { ProjectTab } from '../types';
+import { openInFinder } from '../api';
 
 interface BottomBarProps {
   isTerminalOpen: boolean;
@@ -97,7 +98,19 @@ export const BottomBar: React.FC<BottomBarProps> = ({
       {/* Right status info */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
         {activeProject?.repoName && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--jb-text-dim)' }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              color: 'var(--jb-text-dim)',
+              cursor: 'pointer',
+              padding: '1px 5px',
+              borderRadius: '3px',
+            }}
+            onClick={() => activeProject?.repoRoot && openInFinder(activeProject.repoRoot)}
+            title={`Open ${activeProject.repoRoot} in Finder`}
+          >
             <FolderGit2 size={11} />
             <span style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {activeProject.repoName}

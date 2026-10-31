@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
-import { Archive, Clock, File, Play, Trash2, RotateCcw } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Archive, Clock, File, Play, Trash2, RotateCcw, FolderSearch, Copy } from 'lucide-react';
 import { ShelfItem } from '../types';
+import { openInFinder } from '../api';
 
 interface ShelfViewProps {
   shelfItems: ShelfItem[];
@@ -22,6 +23,17 @@ export const ShelfView: React.FC<ShelfViewProps> = ({
   onRefresh,
 }) => {
   const [keepInShelf, setKeepInShelf] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; path: string } | null>(null);
+
+  useEffect(() => {
+    const handleClose = () => setContextMenu(null);
+    window.addEventListener('click', handleClose);
+    window.addEventListener('scroll', handleClose, true);
+    return () => {
+      window.removeEventListener('click', handleClose);
+      window.removeEventListener('scroll', handleClose, true);
+    };
+  }, []);
 
   const selectedItem = shelfItems.find((s) => s.id === selectedShelfId) || shelfItems[0];
 
@@ -188,6 +200,14 @@ export const ShelfView: React.FC<ShelfViewProps> = ({
               color: 'var(--jb-git-modified)',
             }}
             onClick={() => onSelectShelfFile(selectedItem.id, f.path)}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              const x = Math.min(e.clientX, window.innerWidth - 210);
+              const y = Math.min(e.clientY, window.innerHeight - 100);
+              setContextMenu({ x, y, path: f.path });
+            }}
+            className="jb-tree-row"
           >
             <File size={13} style={{ marginRight: '6px', color: 'var(--jb-text-muted)' }} />
             <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -196,6 +216,43 @@ export const ShelfView: React.FC<ShelfViewProps> = ({
           </div>
         ))}
       </div>
+
+      {/* Context Menu */}
+      {contextMenu && (
+        <div
+          className="jb-context-menu"
+          style={{ top: contextMenu.y, left: contextMenu.x }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div
+            className="jb-menu-item"
+            onClick={async () => {
+              setContextMenu(null);
+              try {
+                await openInFinder(contextMenu.path);
+              } catch (e: any) {
+                alert(e.message || 'Failed to open in Finder');
+              }
+            }}
+          >
+            <FolderSearch size={14} color="var(--jb-accent)" />
+            <span>Reveal in Finder</span>
+          </div>
+
+          <div className="jb-menu-separator" />
+
+          <div
+            className="jb-menu-item"
+            onClick={() => {
+              navigator.clipboard.writeText(contextMenu.path);
+              setContextMenu(null);
+            }}
+          >
+            <Copy size={13} />
+            <span>Copy Path</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

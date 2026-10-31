@@ -233,6 +233,18 @@ export async function saveProjectHistory(data: { projects?: ProjectTab[]; recent
   } catch {}
 }
 
+export async function openInFinder(filePath: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/fs/open-in-finder`, {
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ path: filePath }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to open in Finder');
+  }
+}
+
 // Terminal APIs
 export async function fetchTerminalInfo(sessionId = 'default'): Promise<{ cwd: string; repoRoot: string; repoName: string }> {
   const res = await fetch(`${API_BASE}/terminal/info?sessionId=${encodeURIComponent(sessionId)}`, {

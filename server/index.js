@@ -17,13 +17,24 @@ import {
 } from './git.js';
 import { ChangelistManager } from './changelists.js';
 import { ShelfManager } from './shelf.js';
-import { spawn } from 'child_process';
+import { spawn, execFile } from 'child_process';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const DIST_DIR = path.resolve(__dirname, '../dist');
 
 let defaultRepoRoot = process.cwd();
+
+let appVersion = '1.0.0';
+try {
+  const pkgPath = path.resolve(__dirname, '../package.json');
+  if (fs.existsSync(pkgPath)) {
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+    appVersion = pkg.version || '1.0.0';
+  }
+} catch (e) {
+  console.warn('Failed to read package.json version:', e);
+}
 
 // Terminal process & session management
 const activeTerminalProcesses = new Map();
@@ -207,6 +218,117 @@ const server = http.createServer(async (req, res) => {
     const changelistMgr = new ChangelistManager(currentRepo);
     const shelfMgr = new ShelfManager(currentRepo);
 
+    // App Version & Update APIs
+    if (pathname === '/api/app/version' && req.method === 'GET') {
+      return sendJson(res, 200, {
+        version: appVersion,
+        repo: 'albertincx/ultra-git',
+        githubUrl: 'https://github.com/albertincx/ultra-git',
+      });
+    }
+
+    if (pathname === '/api/app/open-url' && req.method === 'POST') {
+      const body = await parseJsonBody(req);
+      if (body.url) {
+        execFile('open', [body.url], (err) => {
+          if (err) console.error('Failed to open url:', err);
+        });
+      }
+      return sendJson(res, 200, { ok: true });
+    }
+
+    if (pathname === '/api/app/check-updates' && (req.method === 'GET' || req.method === 'POST')) {
+      const GITHUB_REPO = 'albertincx/ultra-git';
+      try {
+        const ghRes = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`, {
+          headers: {
+            'User-Agent': 'ultra-git-updater',
+            'Accept': 'application/vnd.github.v3+json',
+          },
+        });
+
+        if (ghRes.ok) {
+          const data = await ghRes.json();
+          const latestTag = data.tag_name || data.name || '';
+          const cleanLatest = latestTag.replace(/^v/, '').trim();
+          const cleanCurrent = appVersion.replace(/^v/, '').trim();
+
+          const hasUpdate = cleanLatest !== cleanCurrent;
+          let downloadUrl = data.html_url || `https://github.com/${GITHUB_REPO}/releases/latest`;
+          if (data.assets && data.assets.length > 0) {
+            const macAsset = data.assets.find((a) => a.name.includes('mac') || a.name.endsWith('.zip') || a.name.endsWith('.dmg'));
+            if (macAsset && macAsset.browser_download_url) {
+              downloadUrl = macAsset.browser_download_url;
+            }
+          }
+
+          return sendJson(res, 200, {
+            currentVersion: appVersion,
+            latestVersion: cleanLatest,
+            tagName: latestTag,
+            hasUpdate,
+            downloadUrl,
+            releaseUrl: data.html_url || `https://github.com/${GITHUB_REPO}/releases`,
+            releaseNotes: data.body || '',
+            publishedAt: data.published_at || '',
+            releaseName: data.name || latestTag,
+          });
+        }
+
+        // Fallback: check tags if no formal release
+        const tagsRes = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/tags`, {
+          headers: {
+            'User-Agent': 'ultra-git-updater',
+            'Accept': 'application/vnd.github.v3+json',
+          },
+        });
+
+        if (tagsRes.ok) {
+          const tags = await tagsRes.json();
+          if (Array.isArray(tags) && tags.length > 0) {
+            const latestTag = tags[0].name || '';
+            const cleanLatest = latestTag.replace(/^v/, '').trim();
+            const cleanCurrent = appVersion.replace(/^v/, '').trim();
+            const hasUpdate = cleanLatest !== cleanCurrent;
+
+            return sendJson(res, 200, {
+              currentVersion: appVersion,
+              latestVersion: cleanLatest,
+              tagName: latestTag,
+              hasUpdate,
+              downloadUrl: `https://github.com/${GITHUB_REPO}/releases/tag/${latestTag}`,
+              releaseUrl: `https://github.com/${GITHUB_REPO}/releases`,
+              releaseNotes: 'New version available from GitHub tags.',
+              publishedAt: '',
+              releaseName: latestTag,
+            });
+          }
+        }
+
+        // No releases or tags yet
+        return sendJson(res, 200, {
+          currentVersion: appVersion,
+          latestVersion: appVersion,
+          tagName: `v${appVersion}`,
+          hasUpdate: false,
+          downloadUrl: `https://github.com/${GITHUB_REPO}/releases`,
+          releaseUrl: `https://github.com/${GITHUB_REPO}/releases`,
+          releaseNotes: '',
+          publishedAt: '',
+          message: 'Up to date. No newer releases found on GitHub.',
+        });
+      } catch (err) {
+        return sendJson(res, 200, {
+          currentVersion: appVersion,
+          latestVersion: appVersion,
+          hasUpdate: false,
+          error: err.message,
+          downloadUrl: `https://github.com/${GITHUB_REPO}/releases`,
+          releaseUrl: `https://github.com/${GITHUB_REPO}/releases`,
+        });
+      }
+    }
+
     if (pathname === '/api/repo' && req.method === 'GET') {
       const branchInfo = await getBranchInfo(currentRepo);
       return sendJson(res, 200, {
@@ -372,6 +494,37 @@ const server = http.createServer(async (req, res) => {
 
       return;
     }
+    // Open / Reveal in macOS Finder
+    if (pathname === '/api/fs/open-in-finder' && req.method === 'POST') {
+      const body = await parseJsonBody(req);
+      if (!body.path && body.path !== '') {
+        return sendJson(res, 400, { error: 'path required' });
+      }
+      const targetPath = body.path;
+      const fullPath = path.isAbsolute(targetPath) ? targetPath : path.resolve(currentRepo, targetPath);
+
+      if (!fs.existsSync(fullPath)) {
+        return sendJson(res, 404, { error: 'Path not found on disk: ' + fullPath });
+      }
+
+      try {
+        const stat = await fs.promises.stat(fullPath);
+        // If directory, open folder; if file, reveal file with -R
+        const args = stat.isDirectory() ? [fullPath] : ['-R', fullPath];
+
+        execFile('open', args, (err) => {
+          if (err) {
+            console.error('Failed to open in Finder:', err);
+            return sendJson(res, 500, { error: err.message });
+          }
+          return sendJson(res, 200, { success: true, path: fullPath });
+        });
+      } catch (err) {
+        return sendJson(res, 500, { error: err.message });
+      }
+      return;
+    }
+
     if (pathname === '/api/fs/dir' && req.method === 'GET') {
       const currentRepo = await resolveRepoRoot(req, parsedUrl);
       const subPath = parsedUrl.query.path || '';

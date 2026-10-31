@@ -15,8 +15,11 @@ import {
   CheckSquare,
   Square,
   MinusSquare,
+  FolderSearch,
+  Copy,
 } from 'lucide-react';
 import { GitFile, Changelist, ChangelistState, TreeNode } from '../types';
+import { openInFinder } from '../api';
 
 interface ChangesTreeProps {
   files: GitFile[];
@@ -58,8 +61,21 @@ export const ChangesTree: React.FC<ChangesTreeProps> = ({
     x: number;
     y: number;
     filePath?: string;
+    dirPath?: string;
+    dirPaths?: string[];
     changelistId?: string;
   } | null>(null);
+
+  // Close context menu on outside click or scroll
+  React.useEffect(() => {
+    const handleClose = () => setContextMenu(null);
+    window.addEventListener('click', handleClose);
+    window.addEventListener('scroll', handleClose, true);
+    return () => {
+      window.removeEventListener('click', handleClose);
+      window.removeEventListener('scroll', handleClose, true);
+    };
+  }, []);
 
   // Map files by path for fast lookup
   const filesByPath = useMemo(() => {
@@ -164,7 +180,10 @@ export const ChangesTree: React.FC<ChangesTreeProps> = ({
         onClick={() => onSelectFile(file)}
         onContextMenu={(e) => {
           e.preventDefault();
-          setContextMenu({ x: e.clientX, y: e.clientY, filePath: file.path });
+          e.stopPropagation();
+          const x = Math.min(e.clientX, window.innerWidth - 210);
+          const y = Math.min(e.clientY, window.innerHeight - 200);
+          setContextMenu({ x, y, filePath: file.path });
         }}
         className="jb-tree-row"
       >
@@ -251,6 +270,13 @@ export const ChangesTree: React.FC<ChangesTreeProps> = ({
             color: 'var(--jb-text)',
           }}
           onClick={() => toggleDir(node.path)}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const x = Math.min(e.clientX, window.innerWidth - 210);
+            const y = Math.min(e.clientY, window.innerHeight - 240);
+            setContextMenu({ x, y, dirPath: node.path, dirPaths });
+          }}
         >
           {isCollapsed ? (
             <ChevronRight size={13} style={{ marginRight: '4px', color: 'var(--jb-text-dim)', flexShrink: 0 }} />
@@ -515,31 +541,44 @@ export const ChangesTree: React.FC<ChangesTreeProps> = ({
       {/* Context Menu */}
       {contextMenu && (
         <div
+          className="jb-context-menu"
           style={{
-            position: 'fixed',
             top: contextMenu.y,
             left: contextMenu.x,
-            background: '#2b2d30',
-            border: '1px solid var(--jb-border)',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
-            borderRadius: '4px',
-            padding: '4px 0',
-            zIndex: 1000,
-            fontSize: '12px',
-            minWidth: '180px',
           }}
           onClick={(e) => e.stopPropagation()}
         >
           {contextMenu.filePath && (
             <>
               <div
-                style={{
-                  padding: '6px 12px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
+                className="jb-menu-item"
+                onClick={async () => {
+                  setContextMenu(null);
+                  try {
+                    await openInFinder(contextMenu.filePath!);
+                  } catch (e: any) {
+                    alert(e.message || 'Failed to open in Finder');
+                  }
                 }}
+              >
+                <FolderSearch size={14} color="var(--jb-accent)" />
+                <span>Reveal in Finder</span>
+              </div>
+
+              <div
+                className="jb-menu-item"
+                onClick={() => {
+                  navigator.clipboard.writeText(contextMenu.filePath!);
+                  setContextMenu(null);
+                }}
+              >
+                <Copy size={13} />
+                <span>Copy Path</span>
+              </div>
+
+              <div className="jb-menu-separator" />
+
+              <div
                 className="jb-menu-item"
                 onClick={() => {
                   const f = filesByPath.get(contextMenu.filePath!);
@@ -552,13 +591,6 @@ export const ChangesTree: React.FC<ChangesTreeProps> = ({
 
               {/* Move to another changelist */}
               <div
-                style={{
-                  padding: '6px 12px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                }}
                 className="jb-menu-item"
                 onClick={() => {
                   const otherCl = changelistState.changelists.find((c) =>
@@ -575,13 +607,6 @@ export const ChangesTree: React.FC<ChangesTreeProps> = ({
               </div>
 
               <div
-                style={{
-                  padding: '6px 12px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                }}
                 className="jb-menu-item"
                 onClick={() => {
                   onShelveFiles([contextMenu.filePath!]);
@@ -592,16 +617,10 @@ export const ChangesTree: React.FC<ChangesTreeProps> = ({
                 Shelve Changes...
               </div>
 
+              <div className="jb-menu-separator" />
+
               <div
-                style={{
-                  padding: '6px 12px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  color: 'var(--jb-git-conflict)',
-                }}
-                className="jb-menu-item"
+                className="jb-menu-item danger"
                 onClick={() => {
                   const f = filesByPath.get(contextMenu.filePath!);
                   onRollbackFile(contextMenu.filePath!, f?.status === 'untracked');
@@ -614,17 +633,96 @@ export const ChangesTree: React.FC<ChangesTreeProps> = ({
             </>
           )}
 
+          {contextMenu.dirPath && (
+            <>
+              <div
+                className="jb-menu-item"
+                onClick={async () => {
+                  setContextMenu(null);
+                  try {
+                    await openInFinder(contextMenu.dirPath!);
+                  } catch (e: any) {
+                    alert(e.message || 'Failed to open in Finder');
+                  }
+                }}
+              >
+                <FolderSearch size={14} color="var(--jb-accent)" />
+                <span>Open in Finder</span>
+              </div>
+
+              <div
+                className="jb-menu-item"
+                onClick={() => {
+                  navigator.clipboard.writeText(contextMenu.dirPath!);
+                  setContextMenu(null);
+                }}
+              >
+                <Copy size={13} />
+                <span>Copy Folder Path</span>
+              </div>
+
+              <div className="jb-menu-separator" />
+
+              {contextMenu.dirPaths && contextMenu.dirPaths.length > 0 && (
+                <>
+                  <div
+                    className="jb-menu-item"
+                    onClick={() => {
+                      onToggleCheckAll(contextMenu.dirPaths!, true);
+                      setContextMenu(null);
+                    }}
+                  >
+                    <CheckSquare size={13} />
+                    <span>Check All ({contextMenu.dirPaths.length})</span>
+                  </div>
+
+                  <div
+                    className="jb-menu-item"
+                    onClick={() => {
+                      onToggleCheckAll(contextMenu.dirPaths!, false);
+                      setContextMenu(null);
+                    }}
+                  >
+                    <Square size={13} />
+                    <span>Uncheck All ({contextMenu.dirPaths.length})</span>
+                  </div>
+
+                  <div
+                    className="jb-menu-item"
+                    onClick={() => {
+                      onShelveFiles(contextMenu.dirPaths!);
+                      setContextMenu(null);
+                    }}
+                  >
+                    <Archive size={13} />
+                    <span>Shelve Folder Changes...</span>
+                  </div>
+
+                  <div className="jb-menu-separator" />
+
+                  <div
+                    className="jb-menu-item danger"
+                    onClick={() => {
+                      if (confirm(`Rollback all ${contextMenu.dirPaths!.length} changed files in ${contextMenu.dirPath}?`)) {
+                        contextMenu.dirPaths!.forEach((p) => {
+                          const f = filesByPath.get(p);
+                          onRollbackFile(p, f?.status === 'untracked');
+                        });
+                      }
+                      setContextMenu(null);
+                    }}
+                  >
+                    <Trash2 size={13} />
+                    <span>Rollback Folder Changes...</span>
+                  </div>
+                </>
+              )}
+            </>
+          )}
+
           {contextMenu.changelistId && (
             <div
-              style={{
-                padding: '6px 12px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                color: 'var(--jb-git-conflict)',
-              }}
-              className="jb-menu-item"
+              className="jb-menu-item danger"
               onClick={() => {
                 onDeleteChangelist(contextMenu.changelistId!);
                 setContextMenu(null);
