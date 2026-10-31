@@ -17,12 +17,17 @@ import {
 } from './git.js';
 import { ChangelistManager } from './changelists.js';
 import { ShelfManager } from './shelf.js';
+import { spawn } from 'child_process';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const DIST_DIR = path.resolve(__dirname, '../dist');
 
 let defaultRepoRoot = process.cwd();
+
+// Terminal process & session management
+const activeTerminalProcesses = new Map();
+const terminalSessionCwd = new Map();
 
 async function initRepo(initialPath) {
   const root = await getRepoRoot(initialPath);
@@ -226,7 +231,147 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
-    // File Explorer: list directory entries with git status
+    // Terminal APIs
+    if (pathname === '/api/terminal/info' && req.method === 'GET') {
+      const sessionId = parsedUrl.query.sessionId || 'default';
+      const sessionCwd = terminalSessionCwd.get(sessionId) || currentRepo;
+      return sendJson(res, 200, {
+        cwd: sessionCwd,
+        repoRoot: currentRepo,
+        repoName: path.basename(currentRepo),
+      });
+    }
+
+    if (pathname === '/api/terminal/reset' && req.method === 'POST') {
+      const body = await parseJsonBody(req);
+      const sessionId = body.sessionId || 'default';
+      terminalSessionCwd.set(sessionId, currentRepo);
+      return sendJson(res, 200, { cwd: currentRepo, repoRoot: currentRepo });
+    }
+
+    if (pathname === '/api/terminal/kill' && req.method === 'POST') {
+      const body = await parseJsonBody(req);
+      const { execId } = body;
+      if (execId && activeTerminalProcesses.has(execId)) {
+        const proc = activeTerminalProcesses.get(execId);
+        try {
+          proc.kill('SIGINT');
+          setTimeout(() => {
+            try { proc.kill('SIGTERM'); } catch {}
+          }, 400);
+        } catch (e) {
+          console.warn('Kill process error:', e);
+        }
+        activeTerminalProcesses.delete(execId);
+      }
+      return sendJson(res, 200, { success: true });
+    }
+
+    if (pathname === '/api/terminal/exec' && req.method === 'POST') {
+      const body = await parseJsonBody(req);
+      const { command, sessionId = 'default', execId } = body;
+
+      if (!command || typeof command !== 'string') {
+        return sendJson(res, 400, { error: 'command is required' });
+      }
+
+      let sessionCwd = body.cwd || terminalSessionCwd.get(sessionId) || currentRepo;
+      if (!fs.existsSync(sessionCwd)) {
+        sessionCwd = currentRepo;
+      }
+
+      const trimmed = command.trim();
+
+      // Set up SSE streaming response
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache, no-transform',
+        'Connection': 'keep-alive',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'Content-Type, X-Repo-Path',
+      });
+
+      // Special handling for cd
+      if (trimmed === 'cd' || trimmed.startsWith('cd ') || trimmed.startsWith('cd\t')) {
+        const arg = trimmed === 'cd' ? '' : trimmed.slice(2).trim();
+        let targetDir = '';
+        if (!arg || arg === '~') {
+          targetDir = os.homedir();
+        } else if (arg.startsWith('~/')) {
+          targetDir = path.join(os.homedir(), arg.slice(2));
+        } else if (path.isAbsolute(arg)) {
+          targetDir = path.normalize(arg);
+        } else {
+          targetDir = path.resolve(sessionCwd, arg);
+        }
+
+        if (fs.existsSync(targetDir) && fs.statSync(targetDir).isDirectory()) {
+          sessionCwd = targetDir;
+          terminalSessionCwd.set(sessionId, sessionCwd);
+          res.write(`data: ${JSON.stringify({ type: 'exit', code: 0, cwd: sessionCwd })}\n\n`);
+        } else {
+          res.write(`data: ${JSON.stringify({ type: 'stderr', text: `cd: no such file or directory: ${arg}\n` })}\n\n`);
+          res.write(`data: ${JSON.stringify({ type: 'exit', code: 1, cwd: sessionCwd })}\n\n`);
+        }
+        res.end();
+        return;
+      }
+
+      // Shell execution
+      const shell = process.env.SHELL || (os.platform() === 'win32' ? 'powershell.exe' : '/bin/zsh');
+      let child;
+      try {
+        child = spawn(shell, ['-c', command], {
+          cwd: sessionCwd,
+          env: {
+            ...process.env,
+            TERM: 'xterm-256color',
+            FORCE_COLOR: '1',
+            CLICOLOR_FORCE: '1',
+          },
+        });
+      } catch (err) {
+        res.write(`data: ${JSON.stringify({ type: 'error', error: err.message, cwd: sessionCwd })}\n\n`);
+        res.end();
+        return;
+      }
+
+      if (execId) {
+        activeTerminalProcesses.set(execId, child);
+      }
+
+      req.on('close', () => {
+        if (execId && activeTerminalProcesses.has(execId)) {
+          try {
+            child.kill('SIGINT');
+          } catch {}
+          activeTerminalProcesses.delete(execId);
+        }
+      });
+
+      child.stdout.on('data', (data) => {
+        res.write(`data: ${JSON.stringify({ type: 'stdout', text: data.toString() })}\n\n`);
+      });
+
+      child.stderr.on('data', (data) => {
+        res.write(`data: ${JSON.stringify({ type: 'stderr', text: data.toString() })}\n\n`);
+      });
+
+      child.on('close', (code, signal) => {
+        if (execId) activeTerminalProcesses.delete(execId);
+        const exitCode = code !== null ? code : (signal ? 130 : 0);
+        res.write(`data: ${JSON.stringify({ type: 'exit', code: exitCode, signal, cwd: sessionCwd })}\n\n`);
+        res.end();
+      });
+
+      child.on('error', (err) => {
+        if (execId) activeTerminalProcesses.delete(execId);
+        res.write(`data: ${JSON.stringify({ type: 'error', error: err.message, cwd: sessionCwd })}\n\n`);
+        res.end();
+      });
+
+      return;
+    }
     if (pathname === '/api/fs/dir' && req.method === 'GET') {
       const currentRepo = await resolveRepoRoot(req, parsedUrl);
       const subPath = parsedUrl.query.path || '';

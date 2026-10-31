@@ -232,3 +232,106 @@ export async function saveProjectHistory(data: { projects?: ProjectTab[]; recent
     });
   } catch {}
 }
+
+// Terminal APIs
+export async function fetchTerminalInfo(sessionId = 'default'): Promise<{ cwd: string; repoRoot: string; repoName: string }> {
+  const res = await fetch(`${API_BASE}/terminal/info?sessionId=${encodeURIComponent(sessionId)}`, {
+    headers: getHeaders(),
+  });
+  if (!res.ok) throw new Error('Failed to fetch terminal info');
+  return res.json();
+}
+
+export async function resetTerminalCwd(sessionId = 'default'): Promise<{ cwd: string; repoRoot: string }> {
+  const res = await fetch(`${API_BASE}/terminal/reset`, {
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ sessionId }),
+  });
+  if (!res.ok) throw new Error('Failed to reset terminal');
+  return res.json();
+}
+
+export async function killTerminalProcess(execId: string): Promise<void> {
+  try {
+    await fetch(`${API_BASE}/terminal/kill`, {
+      method: 'POST',
+      headers: getHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ execId }),
+    });
+  } catch (e) {
+    console.warn('Kill process request failed:', e);
+  }
+}
+
+export async function executeTerminalStream(
+  command: string,
+  options: {
+    sessionId?: string;
+    cwd?: string;
+    execId?: string;
+    onStdout?: (text: string) => void;
+    onStderr?: (text: string) => void;
+    onExit?: (code: number, cwd: string) => void;
+    onError?: (error: string) => void;
+    signal?: AbortSignal;
+  }
+): Promise<void> {
+  const res = await fetch(`${API_BASE}/terminal/exec`, {
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({
+      command,
+      sessionId: options.sessionId || 'default',
+      cwd: options.cwd,
+      execId: options.execId,
+    }),
+    signal: options.signal,
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(errText || 'Terminal execution request failed');
+  }
+
+  if (!res.body) return;
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(trimmed.slice(6));
+            if (data.type === 'stdout' && options.onStdout) {
+              options.onStdout(data.text);
+            } else if (data.type === 'stderr' && options.onStderr) {
+              options.onStderr(data.text);
+            } else if (data.type === 'exit' && options.onExit) {
+              options.onExit(data.code, data.cwd);
+            } else if (data.type === 'error' && options.onError) {
+              options.onError(data.error);
+            }
+          } catch (e) {
+            console.warn('Failed to parse SSE data:', trimmed, e);
+          }
+        }
+      }
+    }
+  } catch (err: any) {
+    if (err.name !== 'AbortError') {
+      options.onError?.(err.message || 'Stream connection error');
+    }
+  }
+}

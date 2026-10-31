@@ -24,6 +24,8 @@ import { ChangesTree } from './components/ChangesTree';
 import { ShelfView } from './components/ShelfView';
 import { CommitBar } from './components/CommitBar';
 import { DiffEditor } from './components/DiffEditor';
+import { Terminal } from './components/Terminal';
+import { BottomBar } from './components/BottomBar';
 import { Layers, Archive, FileText } from 'lucide-react';
 
 const SAVED_PROJECTS_KEY = 'ultra_git_projects';
@@ -65,6 +67,44 @@ export const App: React.FC = () => {
   // Splitter state
   const [sidebarWidth, setSidebarWidth] = useState(380);
   const isDraggingSplitter = useRef(false);
+
+  // Superlight Terminal State
+  const [isTerminalOpen, setIsTerminalOpen] = useState(() => {
+    try {
+      const saved = localStorage.getItem('ultra_terminal_open');
+      return saved !== null ? saved === 'true' : true;
+    } catch {}
+    return true;
+  });
+  const [terminalHeight, setTerminalHeight] = useState(() => {
+    try {
+      const saved = localStorage.getItem('ultra_terminal_height');
+      if (saved) return parseInt(saved, 10);
+    } catch {}
+    return 220;
+  });
+  const [isTerminalMaximized, setIsTerminalMaximized] = useState(false);
+  const isDraggingTerminal = useRef(false);
+
+  useEffect(() => {
+    localStorage.setItem('ultra_terminal_open', String(isTerminalOpen));
+  }, [isTerminalOpen]);
+
+  useEffect(() => {
+    localStorage.setItem('ultra_terminal_height', String(terminalHeight));
+  }, [terminalHeight]);
+
+  // Shortcut to toggle terminal (Ctrl+` or Alt+F12)
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey && e.key === '`') || (e.altKey && e.key === 'F12')) {
+        e.preventDefault();
+        setIsTerminalOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, []);
 
   // Shelve dialog state
   const [shelveDialog, setShelveDialog] = useState<{
@@ -366,12 +406,17 @@ export const App: React.FC = () => {
       } else if (isDraggingHorizontal.current) {
         const newHeight = Math.max(100, Math.min(e.clientY - 38, window.innerHeight - 200));
         setExplorerHeight(newHeight);
+      } else if (isDraggingTerminal.current) {
+        const bottomBarHeight = 24;
+        const newHeight = Math.max(100, Math.min(window.innerHeight - e.clientY - bottomBarHeight, window.innerHeight - 140));
+        setTerminalHeight(newHeight);
       }
     };
 
     const handleMouseUp = () => {
       isDraggingSplitter.current = false;
       isDraggingHorizontal.current = false;
+      isDraggingTerminal.current = false;
       document.body.style.cursor = 'default';
     };
 
@@ -396,7 +441,7 @@ export const App: React.FC = () => {
       />
 
       {/* Main Workspace Area */}
-      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+      <div style={{ display: isTerminalMaximized ? 'none' : 'flex', flex: 1, overflow: 'hidden' }}>
         {/* Left Tool Window */}
         <div
           style={{
@@ -524,6 +569,49 @@ export const App: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* Superlight Terminal Panel */}
+      {isTerminalOpen && (
+        <>
+          {!isTerminalMaximized && (
+            <div
+              className="jb-resizer-horizontal"
+              onMouseDown={() => {
+                isDraggingTerminal.current = true;
+                document.body.style.cursor = 'row-resize';
+              }}
+              title="Drag to resize terminal"
+            />
+          )}
+          <div
+            style={{
+              height: isTerminalMaximized ? 'calc(100vh - 62px)' : `${terminalHeight}px`,
+              width: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              flexShrink: 0,
+              overflow: 'hidden',
+            }}
+          >
+            <Terminal
+              repoRoot={activeProject?.repoRoot}
+              repoName={activeProject?.repoName}
+              branch={activeProject?.branch}
+              isMaximized={isTerminalMaximized}
+              onToggleMaximize={() => setIsTerminalMaximized((prev) => !prev)}
+              onClose={() => setIsTerminalOpen(false)}
+            />
+          </div>
+        </>
+      )}
+
+      {/* JetBrains-style Bottom Status Bar */}
+      <BottomBar
+        isTerminalOpen={isTerminalOpen}
+        onToggleTerminal={() => setIsTerminalOpen((prev) => !prev)}
+        activeProject={activeProject}
+        modifiedCount={files.length}
+      />
 
       {/* Shelve Dialog */}
       {shelveDialog.open && (

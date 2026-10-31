@@ -40,7 +40,6 @@ import { GitFileStatus } from '../types';
 import { DiffEngineType, DiffEngineHandle } from './diff-engines/types';
 
 const MonacoEngine = React.lazy(() => import('./diff-engines/MonacoEngine'));
-const UiwEngine = React.lazy(() => import('./diff-engines/UiwEngine'));
 
 interface DiffEditorProps {
   filePath: string;
@@ -754,7 +753,7 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
 
           {/* Diff Engine Selector */}
           <div style={{ width: '1px', height: '16px', background: 'var(--jb-border)', margin: '0 4px' }} />
-          
+
         </div>
       </div>
 
@@ -1000,19 +999,7 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
                 isUnified={isUnified}
               />
             ) : (
-              <UiwEngine
-                filePath={filePath}
-                fileStatus={fileStatus}
-                original={original}
-                modified={currentModified}
-                onSave={(val) => {
-                  setCurrentModified(val);
-                  setIsDirty(true);
-                }}
-                onSaved={() => handleSave()}
-                onRollback={onRollback}
-                isUnified={isUnified}
-              />
+              <></>
             )}
           </React.Suspense>
         </div>
