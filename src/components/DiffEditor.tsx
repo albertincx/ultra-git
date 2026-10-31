@@ -35,6 +35,8 @@ import {
   X,
   CaseSensitive,
   FolderSearch,
+  GitCompare,
+  FileEdit,
 } from 'lucide-react';
 import { saveFileContent, openInFinder } from '../api';
 import { GitFileStatus } from '../types';
@@ -47,6 +49,8 @@ interface DiffEditorProps {
   fileStatus?: GitFileStatus;
   original: string;
   modified: string;
+  mode?: 'diff' | 'editor';
+  onToggleMode?: () => void;
   onSaved: () => void;
   onRollback: () => void;
 }
@@ -76,6 +80,8 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
   fileStatus,
   original,
   modified: initialModified,
+  mode = 'diff',
+  onToggleMode,
   onSaved,
   onRollback,
 }) => {
@@ -92,8 +98,9 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
   const [saveSuccess, setSaveSuccess] = useState(false);
 
 
-  // Untracked or brand new file with no HEAD original
+  // Untracked or brand new file with no HEAD original, or user opened file from File Explorer
   const isUntrackedOrNew = fileStatus === 'untracked' || (!original && fileStatus === 'added');
+  const isEditorOnly = mode === 'editor' || isUntrackedOrNew;
 
   // Sync content when switching files
   useEffect(() => {
@@ -103,7 +110,7 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
 
   // Immediate synchronous calculation of difference chunks so the counter is accurate instantly on load
   useEffect(() => {
-    if (isUntrackedOrNew) {
+    if (isEditorOnly) {
       setChunkCount(0);
       return;
     }
@@ -115,7 +122,7 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
     } catch (e) {
       console.warn('Sync chunk calculation error:', e);
     }
-  }, [filePath, original, initialModified, isUntrackedOrNew]);
+  }, [filePath, original, initialModified, isEditorOnly]);
 
   // Diff Engine state (Monaco by default)
   const [diffEngine, setDiffEngine] = useState<DiffEngineType>(() => {
@@ -395,8 +402,8 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
 
     const lang = getLanguageExtension(filePath);
 
-    // 1. Untracked / Brand New File: Render Single Full-Width Editor
-    if (isUntrackedOrNew) {
+    // 1. Untracked / Brand New File OR Editor Mode: Render Single Full-Width Editor
+    if (isEditorOnly) {
       setChunkCount(0);
       const state = EditorState.create({
         doc: initialModified,
@@ -593,7 +600,7 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
         mergeView.destroy();
       };
     }
-  }, [diffEngine, filePath, original, initialModified, isUnified, isUntrackedOrNew]);
+  }, [diffEngine, filePath, original, initialModified, isUnified, isEditorOnly]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
@@ -645,6 +652,19 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
               <PlusCircle size={10} />
               Untracked File
             </span>
+          ) : isEditorOnly ? (
+            <span
+              style={{
+                background: 'rgba(255, 255, 255, 0.08)',
+                color: 'var(--jb-text)',
+                fontSize: '10px',
+                padding: '1px 6px',
+                borderRadius: '3px',
+                fontWeight: 500,
+              }}
+            >
+              Editor Mode
+            </span>
           ) : (
             <span
               style={{
@@ -677,8 +697,34 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          {/* Difference chunk buttons only when comparing revisions */}
-          {!isUntrackedOrNew && (
+          {/* If opened from Explorer as editor, allow switching to Diff if original exists */}
+          {mode === 'editor' && original && original !== currentModified && onToggleMode && (
+            <button
+              className="jb-btn-secondary"
+              onClick={onToggleMode}
+              title="Compare with HEAD (Open Diff)"
+              style={{ padding: '2px 8px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}
+            >
+              <GitCompare size={12} color="var(--jb-git-modified)" />
+              Compare with HEAD
+            </button>
+          )}
+
+          {/* If in Diff mode, allow switching to full Editor */}
+          {mode === 'diff' && !isUntrackedOrNew && onToggleMode && (
+            <button
+              className="jb-btn-secondary"
+              onClick={onToggleMode}
+              title="Switch to Full Width Editor"
+              style={{ padding: '2px 8px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}
+            >
+              <FileEdit size={12} />
+              Full Editor
+            </button>
+          )}
+
+          {/* Difference chunk buttons only when comparing revisions in Diff mode */}
+          {!isEditorOnly && (
             <>
               {/* Rollback Current Chunk button */}
               <button
@@ -733,8 +779,8 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
             <RotateCcw size={14} />
           </button>
 
-          {/* Toggle Side-by-side / Unified (only for modified files) */}
-          {!isUntrackedOrNew && (
+          {/* Toggle Side-by-side / Unified (only for modified files in Diff mode) */}
+          {!isEditorOnly && (
             <>
               <div style={{ width: '1px', height: '16px', background: 'var(--jb-border)', margin: '0 4px' }} />
               <button
@@ -929,7 +975,7 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
       )}
 
       {/* Pane headers */}
-      {isUntrackedOrNew ? (
+      {isEditorOnly ? (
         <div
           style={{
             display: 'flex',
@@ -942,7 +988,7 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
             paddingLeft: '12px',
           }}
         >
-          <span>Working Tree File (Full Width Editor)</span>
+          <span>{isUntrackedOrNew ? 'Untracked File' : 'Working Copy File'} (Full Width Editor)</span>
           <span style={{ fontSize: '10px', color: 'var(--jb-accent)', marginLeft: '8px' }}>• Live Edit</span>
         </div>
       ) : !isUnified ? (
@@ -1004,6 +1050,7 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
                 fileStatus={fileStatus}
                 original={original}
                 modified={currentModified}
+                mode={mode}
                 onSave={(val) => {
                   setCurrentModified(val);
                   setIsDirty(true);

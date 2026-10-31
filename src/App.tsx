@@ -63,6 +63,7 @@ export const App: React.FC = () => {
   // Selected file for Diff
   const [selectedFile, setSelectedFile] = useState<GitFile | null>(null);
   const [diffContent, setDiffContent] = useState<{ original: string; modified: string } | null>(null);
+  const [editorMode, setEditorMode] = useState<'diff' | 'editor'>('diff');
 
   // Splitter state
   const [sidebarWidth, setSidebarWidth] = useState(380);
@@ -278,15 +279,18 @@ export const App: React.FC = () => {
   };
 
   const handleSelectFile = (file: GitFile) => {
+    setEditorMode('diff');
     setSelectedFile(file);
     loadDiff(file.path);
   };
 
   // Select file from File Explorer
   const handleSelectExplorerFile = (filePath: string, status?: GitFileStatus) => {
+    setEditorMode('editor');
     const existing = files.find((f) => f.path === filePath);
     if (existing) {
-      handleSelectFile(existing);
+      setSelectedFile(existing);
+      loadDiff(filePath);
     } else {
       // Unchanged or regular file
       const dummyFile: GitFile = {
@@ -525,6 +529,15 @@ export const App: React.FC = () => {
                   onUnshelve={handleUnshelve}
                   onDeleteShelf={handleDeleteShelf}
                   onSelectShelfFile={(shelfId, filePath) => {
+                    setEditorMode('diff');
+                    const dummyFile: GitFile = {
+                      path: filePath,
+                      status: 'modified',
+                      staged: false,
+                      workTreeStatus: '',
+                      indexStatus: '',
+                    };
+                    setSelectedFile(dummyFile);
                     loadDiff(filePath);
                   }}
                   onRefresh={loadStatus}
@@ -545,6 +558,8 @@ export const App: React.FC = () => {
               fileStatus={selectedFile.status}
               original={diffContent.original}
               modified={diffContent.modified}
+              mode={editorMode}
+              onToggleMode={() => setEditorMode((prev) => (prev === 'diff' ? 'editor' : 'diff'))}
               onSaved={loadStatus}
               onRollback={() => handleRollback(selectedFile.path, selectedFile.status === 'untracked')}
             />

@@ -13,6 +13,7 @@ export interface DiffEngineProps {
   fileStatus?: GitFileStatus;
   original: string;
   modified: string;
+  mode?: 'diff' | 'editor';
   onSave: (newContent: string) => void;
   onSaved: () => void;
   onRollback: () => void;

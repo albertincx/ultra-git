@@ -82,6 +82,7 @@ export const MonacoEngine = forwardRef<DiffEngineHandle, DiffEngineProps>(
       fileStatus,
       original,
       modified,
+      mode = 'diff',
       onSave,
       onSaved,
       onDiffCount,
@@ -89,7 +90,7 @@ export const MonacoEngine = forwardRef<DiffEngineHandle, DiffEngineProps>(
     },
     ref
   ) => {
-    const isUntrackedOrNew = fileStatus === 'untracked' || (!original && fileStatus === 'added');
+    const isSingleEditor = mode === 'editor' || fileStatus === 'untracked' || (!original && fileStatus === 'added');
     const language = getLanguage(filePath);
     const diffEditorRef = useRef<monaco.editor.IStandaloneDiffEditor | null>(null);
     const singleEditorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
@@ -295,10 +296,11 @@ export const MonacoEngine = forwardRef<DiffEngineHandle, DiffEngineProps>(
       return () => clearInterval(interval);
     }, [filePath, original, modified]);
 
-    if (isUntrackedOrNew) {
+    if (isSingleEditor) {
       return (
         <div style={{ width: '100%', height: '100%', overflow: 'hidden' }}>
           <MonacoEditor
+            key={`${filePath}_${mode}`}
             height="100%"
             language={language}
             value={modified}
