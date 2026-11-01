@@ -190,7 +190,14 @@ export async function getLocalFileContent(repoRoot, filePath) {
  * Save file to working copy
  */
 export async function saveLocalFileContent(repoRoot, filePath, content) {
-  const fullPath = path.join(repoRoot, filePath);
+  if (!filePath || typeof filePath !== 'string') {
+    throw new Error('Valid filePath required');
+  }
+  const resolvedRoot = path.resolve(repoRoot);
+  const fullPath = path.resolve(resolvedRoot, filePath.trim());
+  if (!fullPath.startsWith(resolvedRoot + path.sep)) {
+    throw new Error('Access denied: cannot write outside project root');
+  }
   await fs.promises.mkdir(path.dirname(fullPath), { recursive: true });
   await fs.promises.writeFile(fullPath, content, 'utf8');
 }
@@ -199,13 +206,29 @@ export async function saveLocalFileContent(repoRoot, filePath, content) {
  * Revert / rollback a file
  */
 export async function rollbackFile(repoRoot, filePath, isUntracked = false) {
+  if (!filePath || typeof filePath !== 'string') {
+    throw new Error('Valid filePath required for rollback');
+  }
+
+  const cleanPath = filePath.trim();
+  if (!cleanPath || cleanPath === '.' || cleanPath === '/' || cleanPath === '..') {
+    throw new Error('Invalid filePath for rollback');
+  }
+
+  const resolvedRoot = path.resolve(repoRoot);
+  const fullPath = path.resolve(resolvedRoot, cleanPath);
+
+  // Strict safety check: fullPath must be strictly INSIDE resolvedRoot and never root itself
+  if (fullPath === resolvedRoot || !fullPath.startsWith(resolvedRoot + path.sep)) {
+    throw new Error('Safety check failed: cannot rollback paths outside project root');
+  }
+
   if (isUntracked) {
-    const fullPath = path.join(repoRoot, filePath);
     if (fs.existsSync(fullPath)) {
       await fs.promises.rm(fullPath, { recursive: true, force: true });
     }
   } else {
-    await runGit(['restore', '--staged', '--worktree', filePath], repoRoot);
+    await runGit(['restore', '--staged', '--worktree', cleanPath], repoRoot);
   }
 }
 
