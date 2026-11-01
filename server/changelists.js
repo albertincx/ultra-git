@@ -13,10 +13,12 @@ export class ChangelistManager {
     try {
       if (fs.existsSync(this.filePath)) {
         const raw = await fs.promises.readFile(this.filePath, 'utf8');
-        return JSON.parse(raw);
+        if (raw && raw.trim()) {
+          return JSON.parse(raw);
+        }
       }
     } catch (e) {
-      console.error('Error loading changelists:', e);
+      console.warn('Error loading changelists:', e.message);
     }
     return {
       activeId: 'default',
@@ -36,7 +38,9 @@ export class ChangelistManager {
     try {
       const gitDir = path.dirname(this.filePath);
       if (fs.existsSync(gitDir)) {
-        await fs.promises.writeFile(this.filePath, JSON.stringify(data, null, 2), 'utf8');
+        const tmpPath = `${this.filePath}.tmp.${Date.now()}`;
+        await fs.promises.writeFile(tmpPath, JSON.stringify(data, null, 2), 'utf8');
+        await fs.promises.rename(tmpPath, this.filePath);
       }
     } catch (e) {
       console.error('Error saving changelists:', e);

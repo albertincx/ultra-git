@@ -58,13 +58,19 @@ function parseJsonBody(req) {
     req.on('data', (chunk) => { body += chunk.toString(); });
     req.on('end', () => {
       try {
-        resolve(body ? JSON.parse(body) : {});
+        resolve(body && body.trim() ? JSON.parse(body) : {});
       } catch (err) {
         reject(err);
       }
     });
     req.on('error', reject);
   });
+}
+
+async function atomicWriteFile(filePath, content) {
+  const tmpPath = `${filePath}.tmp.${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  await fs.promises.writeFile(tmpPath, content, 'utf8');
+  await fs.promises.rename(tmpPath, filePath);
 }
 
 function sendJson(res, statusCode, data) {
@@ -181,10 +187,16 @@ const server = http.createServer(async (req, res) => {
         try {
           if (fs.existsSync(historyFile)) {
             const raw = await fs.promises.readFile(historyFile, 'utf8');
-            return sendJson(res, 200, JSON.parse(raw));
+            if (raw && raw.trim()) {
+              const data = JSON.parse(raw);
+              return sendJson(res, 200, {
+                projects: Array.isArray(data.projects) ? data.projects : [],
+                recent: Array.isArray(data.recent) ? data.recent : [],
+              });
+            }
           }
         } catch (e) {
-          console.error('Error reading history file:', e);
+          console.warn('Recovered from invalid history file, resetting history:', e.message);
         }
         return sendJson(res, 200, { projects: [], recent: [] });
       }
@@ -196,14 +208,20 @@ const server = http.createServer(async (req, res) => {
           if (fs.existsSync(historyFile)) {
             try {
               const raw = await fs.promises.readFile(historyFile, 'utf8');
-              current = JSON.parse(raw);
+              if (raw && raw.trim()) {
+                const parsed = JSON.parse(raw);
+                current = {
+                  projects: Array.isArray(parsed.projects) ? parsed.projects : [],
+                  recent: Array.isArray(parsed.recent) ? parsed.recent : [],
+                };
+              }
             } catch {}
           }
           const updated = {
             projects: Array.isArray(body.projects) ? body.projects : current.projects,
             recent: Array.isArray(body.recent) ? body.recent : current.recent,
           };
-          await fs.promises.writeFile(historyFile, JSON.stringify(updated, null, 2), 'utf8');
+          await atomicWriteFile(historyFile, JSON.stringify(updated, null, 2));
           return sendJson(res, 200, { ok: true });
         } catch (e) {
           return sendJson(res, 500, { error: e.message });

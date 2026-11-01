@@ -27,7 +27,10 @@ export class ShelfManager {
     if (!ok) return [];
     try {
       const raw = await fs.promises.readFile(this.indexPath, 'utf8');
-      return JSON.parse(raw);
+      if (raw && raw.trim()) {
+        return JSON.parse(raw);
+      }
+      return [];
     } catch (e) {
       return [];
     }
@@ -36,7 +39,9 @@ export class ShelfManager {
   async saveIndex(index) {
     const ok = await this.ensureDir();
     if (!ok) return;
-    await fs.promises.writeFile(this.indexPath, JSON.stringify(index, null, 2), 'utf8');
+    const tmpPath = `${this.indexPath}.tmp.${Date.now()}`;
+    await fs.promises.writeFile(tmpPath, JSON.stringify(index, null, 2), 'utf8');
+    await fs.promises.rename(tmpPath, this.indexPath);
   }
 
   /**
