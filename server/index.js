@@ -14,6 +14,8 @@ import {
   rollbackFile,
   commitFiles,
   runGit,
+  isGitRepo,
+  initGitRepo,
 } from './git.js';
 import { ChangelistManager } from './changelists.js';
 import { ShelfManager } from './shelf.js';
@@ -41,9 +43,11 @@ const activeTerminalProcesses = new Map();
 const terminalSessionCwd = new Map();
 
 async function initRepo(initialPath) {
-  const root = await getRepoRoot(initialPath);
-  if (root) {
-    defaultRepoRoot = root;
+  if (initialPath && fs.existsSync(initialPath)) {
+    const stat = fs.statSync(initialPath);
+    const dir = stat.isDirectory() ? path.resolve(initialPath) : path.dirname(path.resolve(initialPath));
+    const root = await getRepoRoot(dir);
+    defaultRepoRoot = root || dir;
   }
   return defaultRepoRoot;
 }
@@ -77,8 +81,12 @@ function sendJson(res, statusCode, data) {
 async function resolveRepoRoot(req, parsedUrl) {
   const customPath = req.headers['x-repo-path'] || parsedUrl.query.repo;
   if (customPath && typeof customPath === 'string') {
-    const root = await getRepoRoot(customPath);
-    if (root) return root;
+    if (fs.existsSync(customPath)) {
+      const stat = fs.statSync(customPath);
+      const dir = stat.isDirectory() ? path.resolve(customPath) : path.dirname(path.resolve(customPath));
+      const root = await getRepoRoot(dir);
+      return root || dir;
+    }
   }
   return defaultRepoRoot;
 }
@@ -145,17 +153,24 @@ const server = http.createServer(async (req, res) => {
         .replace(/^['"]|['"]$/g, '')
         .trim();
 
-      const root = await getRepoRoot(cleanPath);
-      if (!root) {
-        return sendJson(res, 400, { error: 'Not a valid git repository: ' + cleanPath });
+      if (!fs.existsSync(cleanPath)) {
+        return sendJson(res, 400, { error: 'Folder does not exist: ' + cleanPath });
       }
 
-      const branchInfo = await getBranchInfo(root);
+      const stat = await fs.promises.stat(cleanPath);
+      const targetDir = stat.isDirectory() ? path.resolve(cleanPath) : path.dirname(path.resolve(cleanPath));
+
+      const gitRoot = await getRepoRoot(targetDir);
+      const finalRoot = gitRoot || targetDir;
+      const isGit = !!gitRoot;
+      const branchInfo = isGit ? await getBranchInfo(finalRoot) : { branch: 'no git' };
+
       return sendJson(res, 200, {
         valid: true,
-        repoRoot: root,
-        repoName: path.basename(root),
+        repoRoot: finalRoot,
+        repoName: path.basename(finalRoot),
         branch: branchInfo.branch,
+        isGit,
       });
     }
 
@@ -200,7 +215,7 @@ const server = http.createServer(async (req, res) => {
     if (pathname === '/api/dialog/open-folder' && req.method === 'POST') {
       try {
         const { exec } = await import('child_process');
-        exec("osascript -e 'POSIX path of (choose folder with prompt \"Select Git Repository\")'", (err, stdout) => {
+        exec("osascript -e 'POSIX path of (choose folder with prompt \"Select Folder or Project\")'", (err, stdout) => {
           if (err) {
             // User cancelled
             return sendJson(res, 200, { cancelled: true });
@@ -330,27 +345,49 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (pathname === '/api/repo' && req.method === 'GET') {
-      const branchInfo = await getBranchInfo(currentRepo);
+      const isGit = await isGitRepo(currentRepo);
+      const branchInfo = isGit ? await getBranchInfo(currentRepo) : { branch: 'no git' };
       return sendJson(res, 200, {
         repoRoot: currentRepo,
         repoName: path.basename(currentRepo),
         branch: branchInfo.branch,
+        isGit,
       });
     }
 
     if (pathname === '/api/repo/set' && req.method === 'POST') {
       const body = await parseJsonBody(req);
-      const newRoot = await getRepoRoot(body.path);
-      if (!newRoot) {
-        return sendJson(res, 400, { error: 'Not a valid git repository' });
+      if (!body.path || !fs.existsSync(body.path)) {
+        return sendJson(res, 400, { error: 'Folder does not exist' });
       }
-      defaultRepoRoot = newRoot;
-      const branchInfo = await getBranchInfo(defaultRepoRoot);
+      const stat = await fs.promises.stat(body.path);
+      const targetDir = stat.isDirectory() ? path.resolve(body.path) : path.dirname(path.resolve(body.path));
+      const gitRoot = await getRepoRoot(targetDir);
+      defaultRepoRoot = gitRoot || targetDir;
+      const isGit = !!gitRoot;
+      const branchInfo = isGit ? await getBranchInfo(defaultRepoRoot) : { branch: 'no git' };
       return sendJson(res, 200, {
         repoRoot: defaultRepoRoot,
         repoName: path.basename(defaultRepoRoot),
         branch: branchInfo.branch,
+        isGit,
       });
+    }
+
+    if (pathname === '/api/git/init' && req.method === 'POST') {
+      try {
+        await initGitRepo(currentRepo);
+        const branchInfo = await getBranchInfo(currentRepo);
+        return sendJson(res, 200, {
+          success: true,
+          repoRoot: currentRepo,
+          repoName: path.basename(currentRepo),
+          branch: branchInfo.branch,
+          isGit: true,
+        });
+      } catch (err) {
+        return sendJson(res, 500, { error: err.message || 'Failed to initialize Git repository' });
+      }
     }
 
     // Terminal APIs
@@ -539,7 +576,8 @@ const server = http.createServer(async (req, res) => {
       }
 
       const entries = await fs.promises.readdir(dirFullPath, { withFileTypes: true });
-      const gitFiles = await getGitStatus(currentRepo);
+      const isGit = await isGitRepo(currentRepo);
+      const gitFiles = isGit ? await getGitStatus(currentRepo) : [];
       const statusMap = new Map(gitFiles.map((f) => [f.path, f.status]));
 
       const result = [];
@@ -566,6 +604,28 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (pathname === '/api/status' && req.method === 'GET') {
+      const isGit = await isGitRepo(currentRepo);
+      if (!isGit) {
+        return sendJson(res, 200, {
+          files: [],
+          changelists: {
+            activeId: 'default',
+            changelists: [
+              {
+                id: 'default',
+                name: 'Changes',
+                comment: 'Default changelist',
+                isDefault: true,
+                filePaths: [],
+              },
+            ],
+          },
+          branch: 'no git',
+          repoRoot: currentRepo,
+          isGit: false,
+        });
+      }
+
       const files = await getGitStatus(currentRepo);
       const changelists = await changelistMgr.syncWithStatus(files);
       const branchInfo = await getBranchInfo(currentRepo);
@@ -575,6 +635,7 @@ const server = http.createServer(async (req, res) => {
         changelists,
         branch: branchInfo.branch,
         repoRoot: currentRepo,
+        isGit: true,
       });
     }
 
@@ -609,6 +670,8 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (pathname === '/api/file/stage' && req.method === 'POST') {
+      const isGit = await isGitRepo(currentRepo);
+      if (!isGit) return sendJson(res, 400, { error: 'Not a git repository' });
       const body = await parseJsonBody(req);
       if (!body.path) return sendJson(res, 400, { error: 'path required' });
       if (body.staged) {
@@ -620,6 +683,8 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (pathname === '/api/commit' && req.method === 'POST') {
+      const isGit = await isGitRepo(currentRepo);
+      if (!isGit) return sendJson(res, 400, { error: 'Not a git repository' });
       const body = await parseJsonBody(req);
       if (!body.message) return sendJson(res, 400, { error: 'message required' });
       const result = await commitFiles(currentRepo, body.files || [], body.message);

@@ -43,6 +43,7 @@ export interface ProjectTab {
   repoRoot: string;
   repoName: string;
   branch: string;
+  isGit?: boolean;
 }
 
 export interface FsEntry {
@@ -56,5 +57,6 @@ export interface RecentProject {
   repoRoot: string;
   repoName: string;
   branch: string;
+  isGit?: boolean;
   lastOpenedAt: number;
 }

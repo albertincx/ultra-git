@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
+  Folder,
   FolderGit2,
   GitBranch,
   Plus,
@@ -243,7 +244,11 @@ export const ProjectTabs: React.FC<ProjectTabsProps> = ({
                 title={`${proj.repoName} — ${proj.repoRoot}`}
                 className="jb-project-tab"
               >
-                <FolderGit2 size={14} color={isActive ? 'var(--jb-accent)' : 'var(--jb-text-dim)'} />
+                {proj.isGit === false ? (
+                  <Folder size={14} color={isActive ? 'var(--jb-accent)' : 'var(--jb-text-dim)'} />
+                ) : (
+                  <FolderGit2 size={14} color={isActive ? 'var(--jb-accent)' : 'var(--jb-text-dim)'} />
+                )}
 
                 <span
                   style={{
@@ -257,21 +262,38 @@ export const ProjectTabs: React.FC<ProjectTabsProps> = ({
                 </span>
 
                 {/* Branch Badge */}
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '3px',
-                    background: isActive ? 'rgba(86, 168, 245, 0.15)' : 'rgba(255, 255, 255, 0.05)',
-                    padding: '1px 5px',
-                    borderRadius: '8px',
-                    fontSize: '10px',
-                    color: isActive ? 'var(--jb-git-modified)' : 'var(--jb-text-dim)',
-                  }}
-                >
-                  <GitBranch size={9} />
-                  <span>{proj.branch || 'main'}</span>
-                </div>
+                {proj.isGit === false ? (
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '3px',
+                      background: 'rgba(255, 255, 255, 0.05)',
+                      padding: '1px 5px',
+                      borderRadius: '8px',
+                      fontSize: '10px',
+                      color: 'var(--jb-text-dim)',
+                    }}
+                  >
+                    <span>folder</span>
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '3px',
+                      background: isActive ? 'rgba(86, 168, 245, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                      padding: '1px 5px',
+                      borderRadius: '8px',
+                      fontSize: '10px',
+                      color: isActive ? 'var(--jb-git-modified)' : 'var(--jb-text-dim)',
+                    }}
+                  >
+                    <GitBranch size={9} />
+                    <span>{proj.branch || 'main'}</span>
+                  </div>
+                )}
 
                 {/* Close Tab Button */}
                 {projects.length > 1 && (
@@ -385,7 +407,7 @@ export const ProjectTabs: React.FC<ProjectTabsProps> = ({
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
               <FolderPlus size={18} color="var(--jb-accent)" />
               <h3 style={{ fontSize: '14px', fontWeight: 600, color: '#fff' }}>
-                Open Repository in New Tab
+                Open Folder or Git Repository
               </h3>
             </div>
 

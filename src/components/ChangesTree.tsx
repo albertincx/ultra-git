@@ -17,6 +17,7 @@ import {
   MinusSquare,
   FolderSearch,
   Copy,
+  FolderGit2,
 } from 'lucide-react';
 import { GitFile, Changelist, ChangelistState, TreeNode } from '../types';
 import { openInFinder } from '../api';
@@ -35,6 +36,8 @@ interface ChangesTreeProps {
   onShelveFiles: (paths: string[]) => void;
   onRollbackFile: (path: string, isUntracked?: boolean) => void;
   onDeleteChangelist: (id: string) => void;
+  isGit?: boolean;
+  onInitGit?: () => void;
 }
 
 export const ChangesTree: React.FC<ChangesTreeProps> = ({
@@ -51,6 +54,8 @@ export const ChangesTree: React.FC<ChangesTreeProps> = ({
   onShelveFiles,
   onRollbackFile,
   onDeleteChangelist,
+  isGit,
+  onInitGit,
 }) => {
   const [isTreeView, setIsTreeView] = useState(true);
   const [collapsedDirs, setCollapsedDirs] = useState<Set<string>>(new Set());
@@ -372,8 +377,43 @@ export const ChangesTree: React.FC<ChangesTreeProps> = ({
         </div>
       </div>
 
+      {/* If not a Git repository, show banner */}
+      {isGit === false && (
+        <div
+          style={{
+            margin: '12px',
+            padding: '16px 14px',
+            background: '#1e1f22',
+            border: '1px solid var(--jb-border)',
+            borderRadius: '6px',
+            textAlign: 'center',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '8px',
+          }}
+        >
+          <FolderGit2 size={24} color="var(--jb-accent)" />
+          <div style={{ fontSize: '13px', fontWeight: 600, color: '#fff' }}>
+            Not a Git Repository
+          </div>
+          <div style={{ fontSize: '11px', color: 'var(--jb-text-dim)', lineHeight: '1.4' }}>
+            You can browse, view, and edit files in the explorer above.
+          </div>
+          {onInitGit && (
+            <button
+              className="jb-btn-primary"
+              style={{ marginTop: '4px', fontSize: '11px', padding: '4px 12px' }}
+              onClick={onInitGit}
+            >
+              Initialize Git Repository
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Changelists Tree Container */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '4px 0' }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '4px 0', display: isGit === false ? 'none' : 'block' }}>
         {changelistState.changelists.map((cl) => {
           const isCollapsed = collapsedChangelists.has(cl.id);
           const clFiles = (cl.filePaths || [])

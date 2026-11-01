@@ -16,6 +16,7 @@ import {
   validateRepoPath,
   fetchProjectHistory,
   saveProjectHistory,
+  initGitRepoApi,
 } from './api';
 import { GitFile, ChangelistState, ShelfItem, ProjectTab, GitFileStatus } from './types';
 import { ProjectTabs } from './components/ProjectTabs';
@@ -153,6 +154,7 @@ export const App: React.FC = () => {
               ...combined[matchIndex],
               branch: info.branch || combined[matchIndex].branch,
               repoName: info.repoName || combined[matchIndex].repoName,
+              isGit: info.isGit,
             };
             setActiveProjectId(combined[matchIndex].id);
             setActiveRepoRoot(combined[matchIndex].repoRoot);
@@ -162,6 +164,7 @@ export const App: React.FC = () => {
               repoRoot: info.repoRoot,
               repoName: info.repoName,
               branch: info.branch,
+              isGit: info.isGit,
             };
             combined = [newTab, ...combined];
             setActiveProjectId(newTab.id);
@@ -197,9 +200,16 @@ export const App: React.FC = () => {
         fetchShelfList(),
       ]);
 
-      if (status.branch && status.branch !== activeProject.branch) {
+      if (
+        (status.branch && status.branch !== activeProject.branch) ||
+        (status.isGit !== undefined && status.isGit !== activeProject.isGit)
+      ) {
         setProjects((prev) =>
-          prev.map((p) => (p.id === activeProject.id ? { ...p, branch: status.branch } : p))
+          prev.map((p) =>
+            p.id === activeProject.id
+              ? { ...p, branch: status.branch || p.branch, isGit: status.isGit !== undefined ? status.isGit : p.isGit }
+              : p
+          )
         );
       }
 
@@ -246,6 +256,7 @@ export const App: React.FC = () => {
       repoRoot: validated.repoRoot,
       repoName: validated.repoName,
       branch: validated.branch,
+      isGit: validated.isGit,
     };
 
     const nextProjects = [...projects, newTab];
@@ -265,6 +276,23 @@ export const App: React.FC = () => {
       const nextActive = nextProjects[Math.max(0, index - 1)];
       setActiveProjectId(nextActive.id);
       setActiveRepoRoot(nextActive.repoRoot);
+    }
+  };
+
+  // Initialize Git repository for active project
+  const handleInitGit = async () => {
+    try {
+      const res = await initGitRepoApi();
+      setProjects((prev) =>
+        prev.map((p) =>
+          p.id === activeProjectId
+            ? { ...p, branch: res.branch, isGit: true }
+            : p
+        )
+      );
+      await loadStatus();
+    } catch (e: any) {
+      alert(e.message || 'Failed to initialize Git repository');
     }
   };
 
@@ -514,12 +542,16 @@ export const App: React.FC = () => {
                       onShelveFiles={handleOpenShelveDialog}
                       onRollbackFile={handleRollback}
                       onDeleteChangelist={handleDeleteChangelist}
+                      isGit={activeProject?.isGit !== false}
+                      onInitGit={handleInitGit}
                     />
                   </div>
-                  <CommitBar
-                    checkedCount={checkedFiles.size}
-                    onCommit={handleCommit}
-                  />
+                  {activeProject?.isGit !== false && (
+                    <CommitBar
+                      checkedCount={checkedFiles.size}
+                      onCommit={handleCommit}
+                    />
+                  )}
                 </>
               ) : (
                 <ShelfView

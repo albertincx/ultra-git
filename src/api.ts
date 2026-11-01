@@ -30,11 +30,17 @@ export async function openFolderDialog(): Promise<string | null> {
   return data.path;
 }
 
-export async function validateRepoPath(path: string): Promise<{ valid: boolean; repoRoot: string; repoName: string; branch: string }> {
+export async function validateRepoPath(path: string): Promise<{
+  valid: boolean;
+  repoRoot: string;
+  repoName: string;
+  branch: string;
+  isGit?: boolean;
+}> {
   const res = await fetch(`${API_BASE}/repo/validate?path=${encodeURIComponent(path)}`);
   if (!res.ok) {
     const err = await res.json();
-    throw new Error(err.error || 'Invalid repository path');
+    throw new Error(err.error || 'Invalid folder path');
   }
   return res.json();
 }
@@ -47,14 +53,32 @@ export async function fetchDirEntries(subPath = ''): Promise<FsEntry[]> {
   return res.json();
 }
 
-export async function fetchRepoInfo(): Promise<{ repoRoot: string; repoName: string; branch: string }> {
+export async function fetchRepoInfo(): Promise<{ repoRoot: string; repoName: string; branch: string; isGit?: boolean }> {
   const res = await fetch(`${API_BASE}/repo`, {
     headers: getHeaders(),
   });
   return res.json();
 }
 
-export async function setRepoPath(path: string): Promise<{ repoRoot: string; repoName: string; branch: string }> {
+export async function initGitRepoApi(): Promise<{
+  success: boolean;
+  repoRoot: string;
+  repoName: string;
+  branch: string;
+  isGit: boolean;
+}> {
+  const res = await fetch(`${API_BASE}/git/init`, {
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }),
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error || 'Failed to initialize Git repository');
+  }
+  return res.json();
+}
+
+export async function setRepoPath(path: string): Promise<{ repoRoot: string; repoName: string; branch: string; isGit?: boolean }> {
   const res = await fetch(`${API_BASE}/repo/set`, {
     method: 'POST',
     headers: getHeaders({ 'Content-Type': 'application/json' }),
@@ -72,6 +96,7 @@ export async function fetchGitStatus(): Promise<{
   changelists: ChangelistState;
   branch: string;
   repoRoot: string;
+  isGit?: boolean;
 }> {
   const res = await fetch(`${API_BASE}/status`, {
     headers: getHeaders(),

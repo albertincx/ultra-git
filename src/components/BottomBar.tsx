@@ -1,5 +1,5 @@
 import React from 'react';
-import { Terminal, GitBranch, Layers, FolderGit2 } from 'lucide-react';
+import { Terminal, GitBranch, Layers, FolderGit2, Folder } from 'lucide-react';
 import { ProjectTab } from '../types';
 import { openInFinder } from '../api';
 
@@ -70,14 +70,21 @@ export const BottomBar: React.FC<BottomBarProps> = ({
         <div style={{ width: '1px', height: '12px', background: 'var(--jb-border)' }} />
 
         {/* Git changes indicator */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-          <Layers size={11} color="var(--jb-git-modified)" />
-          <span>
-            {modifiedCount} file{modifiedCount !== 1 ? 's' : ''} changed
-          </span>
-        </div>
+        {activeProject?.isGit === false ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--jb-text-dim)' }}>
+            <Folder size={11} />
+            <span>Folder (no git)</span>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <Layers size={11} color="var(--jb-git-modified)" />
+            <span>
+              {modifiedCount} file{modifiedCount !== 1 ? 's' : ''} changed
+            </span>
+          </div>
+        )}
 
-        {activeProject?.branch && (
+        {activeProject?.isGit !== false && activeProject?.branch && activeProject.branch !== 'no git' && (
           <>
             <div style={{ width: '1px', height: '12px', background: 'var(--jb-border)' }} />
             <div
@@ -111,7 +118,7 @@ export const BottomBar: React.FC<BottomBarProps> = ({
             onClick={() => activeProject?.repoRoot && openInFinder(activeProject.repoRoot)}
             title={`Open ${activeProject.repoRoot} in Finder`}
           >
-            <FolderGit2 size={11} />
+            {activeProject.isGit === false ? <Folder size={11} /> : <FolderGit2 size={11} />}
             <span style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {activeProject.repoName}
             </span>

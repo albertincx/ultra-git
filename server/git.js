@@ -29,10 +29,33 @@ export function runGit(args, cwd) {
 }
 
 /**
+ * Check if directory is inside a Git working tree
+ */
+export async function isGitRepo(dir) {
+  if (!dir) return false;
+  try {
+    if (!fs.existsSync(dir)) return false;
+    const res = await runGit(['rev-parse', '--is-inside-work-tree'], dir);
+    return res.trim() === 'true';
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
+ * Initialize a new Git repository
+ */
+export async function initGitRepo(dir) {
+  return await runGit(['init'], dir);
+}
+
+/**
  * Get repo root directory
  */
 export async function getRepoRoot(dir) {
+  if (!dir) return null;
   try {
+    if (!fs.existsSync(dir)) return null;
     const res = await runGit(['rev-parse', '--show-toplevel'], dir);
     return res.trim();
   } catch (e) {
@@ -45,10 +68,13 @@ export async function getRepoRoot(dir) {
  */
 export async function getBranchInfo(repoRoot) {
   try {
+    const isGit = await isGitRepo(repoRoot);
+    if (!isGit) return { branch: 'no git' };
     const branch = (await runGit(['rev-parse', '--abbrev-ref', 'HEAD'], repoRoot)).trim();
-    return { branch };
+    return { branch: branch === 'HEAD' ? 'main' : branch };
   } catch (e) {
-    return { branch: 'HEAD' };
+    const isGit = await isGitRepo(repoRoot);
+    return { branch: isGit ? 'main' : 'no git' };
   }
 }
 
@@ -61,7 +87,15 @@ export async function getBranchInfo(repoRoot) {
  * ! = ignored entry
  */
 export async function getGitStatus(repoRoot) {
-  const output = await runGit(['status', '--porcelain=v2', '-uall'], repoRoot);
+  const isGit = await isGitRepo(repoRoot);
+  if (!isGit) return [];
+
+  let output = '';
+  try {
+    output = await runGit(['status', '--porcelain=v2', '-uall'], repoRoot);
+  } catch (e) {
+    return [];
+  }
   const files = [];
 
   const lines = output.split('\n');

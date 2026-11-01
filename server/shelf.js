@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { runGit, rollbackFile } from './git.js';
+import { runGit, rollbackFile, isGitRepo } from './git.js';
 
 const SHELF_DIR = '.git/ultra_shelf';
 const SHELF_INDEX = 'shelf_index.json';
@@ -13,14 +13,18 @@ export class ShelfManager {
   }
 
   async ensureDir() {
+    const isGit = await isGitRepo(this.repoRoot);
+    if (!isGit) return false;
     await fs.promises.mkdir(this.shelfPath, { recursive: true });
     if (!fs.existsSync(this.indexPath)) {
       await fs.promises.writeFile(this.indexPath, JSON.stringify([], null, 2), 'utf8');
     }
+    return true;
   }
 
   async getIndex() {
-    await this.ensureDir();
+    const ok = await this.ensureDir();
+    if (!ok) return [];
     try {
       const raw = await fs.promises.readFile(this.indexPath, 'utf8');
       return JSON.parse(raw);
@@ -30,7 +34,8 @@ export class ShelfManager {
   }
 
   async saveIndex(index) {
-    await this.ensureDir();
+    const ok = await this.ensureDir();
+    if (!ok) return;
     await fs.promises.writeFile(this.indexPath, JSON.stringify(index, null, 2), 'utf8');
   }
 
@@ -41,7 +46,8 @@ export class ShelfManager {
    * @param {boolean} revertWorkingCopy
    */
   async shelve(filePaths, description = 'Shelved changes', revertWorkingCopy = true) {
-    await this.ensureDir();
+    const ok = await this.ensureDir();
+    if (!ok) throw new Error('Not a git repository');
     const id = 'shelf_' + Date.now();
     const patchFileName = `${id}.patch`;
     const patchFilePath = path.join(this.shelfPath, patchFileName);
