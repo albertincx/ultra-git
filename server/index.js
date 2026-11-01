@@ -671,6 +671,20 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { original, modified, path: filePath });
     }
 
+    if (pathname === '/api/file/compare' && req.method === 'GET') {
+      const path1 = parsedUrl.query.path1;
+      const path2 = parsedUrl.query.path2;
+      if (!path1 || !path2) {
+        return sendJson(res, 400, { error: 'path1 and path2 are required' });
+      }
+      const [content1, content2] = await Promise.all([
+        getLocalFileContent(currentRepo, path1),
+        getLocalFileContent(currentRepo, path2),
+      ]);
+
+      return sendJson(res, 200, { path1, path2, content1, content2 });
+    }
+
     if (pathname === '/api/file/save' && req.method === 'POST') {
       const body = await parseJsonBody(req);
       if (!body.path || body.content === undefined) {

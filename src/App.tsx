@@ -17,6 +17,7 @@ import {
   fetchProjectHistory,
   saveProjectHistory,
   initGitRepoApi,
+  compareTwoFiles,
 } from './api';
 import { GitFile, ChangelistState, ShelfItem, ProjectTab, GitFileStatus } from './types';
 import { ProjectTabs } from './components/ProjectTabs';
@@ -65,6 +66,11 @@ export const App: React.FC = () => {
   const [selectedFile, setSelectedFile] = useState<GitFile | null>(null);
   const [diffContent, setDiffContent] = useState<{ original: string; modified: string } | null>(null);
   const [editorMode, setEditorMode] = useState<'diff' | 'editor'>('diff');
+  const [compareInfo, setCompareInfo] = useState<{
+    title: string;
+    leftLabel: string;
+    rightLabel: string;
+  } | null>(null);
 
   // Splitter state
   const [sidebarWidth, setSidebarWidth] = useState(380);
@@ -238,6 +244,7 @@ export const App: React.FC = () => {
       setActiveRepoRoot(activeProject.repoRoot);
       setSelectedFile(null);
       setDiffContent(null);
+      setCompareInfo(null);
       loadStatus();
     }
   }, [activeProjectId]);
@@ -308,6 +315,7 @@ export const App: React.FC = () => {
 
   const handleSelectFile = (file: GitFile) => {
     setEditorMode('diff');
+    setCompareInfo(null);
     setSelectedFile(file);
     loadDiff(file.path);
   };
@@ -315,6 +323,7 @@ export const App: React.FC = () => {
   // Select file from File Explorer
   const handleSelectExplorerFile = (filePath: string, status?: GitFileStatus) => {
     setEditorMode('editor');
+    setCompareInfo(null);
     const existing = files.find((f) => f.path === filePath);
     if (existing) {
       setSelectedFile(existing);
@@ -330,6 +339,31 @@ export const App: React.FC = () => {
       };
       setSelectedFile(dummyFile);
       loadDiff(filePath);
+    }
+  };
+
+  // Compare two arbitrary files from File Explorer
+  const handleCompareFiles = async (file1: string, file2: string) => {
+    try {
+      const data = await compareTwoFiles(file1, file2);
+      setEditorMode('diff');
+      setDiffContent({ original: data.content1, modified: data.content2 });
+      setCompareInfo({
+        title: `${file1} ↔ ${file2}`,
+        leftLabel: file1,
+        rightLabel: file2,
+      });
+      const compareFile: GitFile = {
+        path: file2,
+        origPath: file1,
+        status: 'modified',
+        staged: false,
+        workTreeStatus: '',
+        indexStatus: '',
+      };
+      setSelectedFile(compareFile);
+    } catch (e: any) {
+      alert(e.message || 'Failed to compare files');
     }
   };
 
@@ -491,6 +525,7 @@ export const App: React.FC = () => {
               repoName={activeProject?.repoName || 'Project'}
               selectedPath={selectedFile?.path || null}
               onSelectFile={handleSelectExplorerFile}
+              onCompareFiles={handleCompareFiles}
             />
           </div>
 
@@ -594,6 +629,9 @@ export const App: React.FC = () => {
               onToggleMode={() => setEditorMode((prev) => (prev === 'diff' ? 'editor' : 'diff'))}
               onSaved={loadStatus}
               onRollback={() => handleRollback(selectedFile.path, selectedFile.status === 'untracked')}
+              compareTitle={compareInfo?.title}
+              leftLabel={compareInfo?.leftLabel}
+              rightLabel={compareInfo?.rightLabel}
             />
           ) : (
             <div

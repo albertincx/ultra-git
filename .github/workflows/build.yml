@@ -67,6 +67,17 @@ jobs:
           DIST_ZIP="ultra-git-${APP_VERSION}-macos.zip"
           mkdir -p build_output/macos
           cp macos/ultraGit build_output/macos/
+          cp macos/AppIcon.icns build_output/macos/
+          cp macos/AppIcon.png build_output/macos/
+
+          # Package native macOS .app bundle
+          APP_BUNDLE="build_output/ultra Git.app"
+          mkdir -p "${APP_BUNDLE}/Contents/MacOS"
+          mkdir -p "${APP_BUNDLE}/Contents/Resources"
+          cp macos/ultraGit "${APP_BUNDLE}/Contents/MacOS/"
+          cp macos/AppIcon.icns "${APP_BUNDLE}/Contents/Resources/"
+          cp macos/Info.plist "${APP_BUNDLE}/Contents/"
+
           cp -r dist build_output/
           cp -r server build_output/
           cp package.json build_output/

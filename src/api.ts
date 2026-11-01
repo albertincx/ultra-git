@@ -113,6 +113,19 @@ export async function fetchFileContent(filePath: string, rev = 'HEAD'): Promise<
   return res.json();
 }
 
+export async function compareTwoFiles(path1: string, path2: string): Promise<{
+  path1: string;
+  path2: string;
+  content1: string;
+  content2: string;
+}> {
+  const res = await fetch(`${API_BASE}/file/compare?path1=${encodeURIComponent(path1)}&path2=${encodeURIComponent(path2)}`, {
+    headers: getHeaders(),
+  });
+  if (!res.ok) throw new Error('Failed to compare files');
+  return res.json();
+}
+
 export async function saveFileContent(filePath: string, content: string): Promise<void> {
   const res = await fetch(`${API_BASE}/file/save`, {
     method: 'POST',

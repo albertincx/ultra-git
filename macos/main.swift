@@ -7,6 +7,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApplication.shared.setActivationPolicy(.regular)
+        setupAppIcon()
         setupMainMenu()
 
         let screenRect = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1400, height: 900)
@@ -51,6 +52,31 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             var request = URLRequest(url: targetUrl)
             request.cachePolicy = .reloadIgnoringLocalCacheData
             webView.load(request)
+        }
+    }
+
+    func setupAppIcon() {
+        let execUrl = URL(fileURLWithPath: CommandLine.arguments[0])
+        let execDir = execUrl.deletingLastPathComponent()
+
+        let candidatePaths: [String?] = [
+            Bundle.main.path(forResource: "AppIcon", ofType: "icns"),
+            Bundle.main.path(forResource: "AppIcon", ofType: "png"),
+            execDir.appendingPathComponent("AppIcon.icns").path,
+            execDir.appendingPathComponent("AppIcon.png").path,
+            execDir.appendingPathComponent("../Resources/AppIcon.icns").path,
+            execDir.appendingPathComponent("../macos/AppIcon.icns").path,
+            execDir.appendingPathComponent("../macos/AppIcon.png").path,
+            execDir.appendingPathComponent("macos/AppIcon.png").path,
+            "macos/AppIcon.png",
+            "macos/AppIcon.icns"
+        ]
+
+        for path in candidatePaths {
+            if let p = path, FileManager.default.fileExists(atPath: p), let image = NSImage(contentsOfFile: p) {
+                NSApplication.shared.applicationIconImage = image
+                return
+            }
         }
     }
 

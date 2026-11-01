@@ -5,8 +5,11 @@ node_modules/
 # Production build outputs
 dist/
 
-# Compiled native macOS binaries
+# Compiled native macOS binaries and app bundles
 macos/ultraGit
+macos/*.app
+build_output/
+*.zip
 
 # OS and temporary files
 .DS_Store

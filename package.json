@@ -8,7 +8,8 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "build:mac": "swiftc -O macos/main.swift -o macos/ultraGit",
-    "build:all": "pnpm run build && pnpm run build:mac",
+    "build:app": "swiftc -O macos/main.swift -o macos/ultraGit && mkdir -p 'macos/ultra Git.app/Contents/MacOS' 'macos/ultra Git.app/Contents/Resources' && cp macos/ultraGit 'macos/ultra Git.app/Contents/MacOS/' && cp macos/AppIcon.icns 'macos/ultra Git.app/Contents/Resources/' && cp macos/Info.plist 'macos/ultra Git.app/Contents/'",
+    "build:all": "pnpm run build && pnpm run build:app",
     "preview": "vite preview",
     "server": "node server/index.js",
     "start": "node server/index.js & vite"

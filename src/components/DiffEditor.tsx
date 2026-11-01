@@ -53,6 +53,9 @@ interface DiffEditorProps {
   onToggleMode?: () => void;
   onSaved: () => void;
   onRollback: () => void;
+  compareTitle?: string;
+  leftLabel?: string;
+  rightLabel?: string;
 }
 
 // Custom Gutter Marker for rolling back individual chunk
@@ -84,6 +87,9 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
   onToggleMode,
   onSaved,
   onRollback,
+  compareTitle,
+  leftLabel,
+  rightLabel,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const mergeViewRef = useRef<MergeView | null>(null);
@@ -99,8 +105,8 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
 
 
   // Untracked or brand new file with no HEAD original, or user opened file from File Explorer
-  const isUntrackedOrNew = fileStatus === 'untracked' || (!original && fileStatus === 'added');
-  const isEditorOnly = mode === 'editor' || isUntrackedOrNew;
+  const isUntrackedOrNew = !compareTitle && (fileStatus === 'untracked' || (!original && fileStatus === 'added'));
+  const isEditorOnly = !compareTitle && (mode === 'editor' || isUntrackedOrNew);
 
   // Sync content when switching files
   useEffect(() => {
@@ -624,7 +630,7 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
             onClick={() => openInFinder(filePath)}
             title="Click to reveal in Finder"
           >
-            {filePath}
+            {compareTitle || filePath}
           </span>
           <button
             className="jb-icon-btn"
@@ -635,7 +641,24 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
             <FolderSearch size={13} />
           </button>
 
-          {isUntrackedOrNew ? (
+          {compareTitle ? (
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '3px',
+                background: 'rgba(86, 168, 245, 0.2)',
+                color: 'var(--jb-accent)',
+                fontSize: '10px',
+                padding: '1px 6px',
+                borderRadius: '3px',
+                fontWeight: 600,
+              }}
+            >
+              <GitCompare size={10} />
+              Compare Mode
+            </span>
+          ) : isUntrackedOrNew ? (
             <span
               style={{
                 display: 'inline-flex',
@@ -1003,12 +1026,14 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
             alignItems: 'center',
           }}
         >
-          <div style={{ flex: 1, paddingLeft: '12px', borderRight: '1px solid var(--jb-border)' }}>
-            HEAD (Committed revision)
+          <div style={{ flex: 1, paddingLeft: '12px', borderRight: '1px solid var(--jb-border)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {leftLabel || 'HEAD (Committed revision)'}
           </div>
-          <div style={{ flex: 1, paddingLeft: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span>Local Working Copy (Editable)</span>
-            <span style={{ fontSize: '10px', color: 'var(--jb-accent)' }}>• Live Edit</span>
+          <div style={{ flex: 1, paddingLeft: '12px', display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {rightLabel || 'Local Working Copy (Editable)'}
+            </span>
+            <span style={{ fontSize: '10px', color: 'var(--jb-accent)', flexShrink: 0 }}>• Live Edit</span>
           </div>
         </div>
       ) : null}
