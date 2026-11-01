@@ -113,20 +113,35 @@ export async function fetchFileContent(filePath: string, rev = 'HEAD'): Promise<
   return res.json();
 }
 
+const compareCache = new Map<string, { path1: string; path2: string; content1: string; content2: string; time: number }>();
+
+export function clearCompareCache() {
+  compareCache.clear();
+}
+
 export async function compareTwoFiles(path1: string, path2: string): Promise<{
   path1: string;
   path2: string;
   content1: string;
   content2: string;
 }> {
+  const cacheKey = `${activeRepoRoot}:${path1}:${path2}`;
+  const cached = compareCache.get(cacheKey);
+  if (cached && Date.now() - cached.time < 60000) {
+    return cached;
+  }
+
   const res = await fetch(`${API_BASE}/file/compare?path1=${encodeURIComponent(path1)}&path2=${encodeURIComponent(path2)}`, {
     headers: getHeaders(),
   });
   if (!res.ok) throw new Error('Failed to compare files');
-  return res.json();
+  const data = await res.json();
+  compareCache.set(cacheKey, { ...data, time: Date.now() });
+  return data;
 }
 
 export async function saveFileContent(filePath: string, content: string): Promise<void> {
+  clearCompareCache();
   const res = await fetch(`${API_BASE}/file/save`, {
     method: 'POST',
     headers: getHeaders({ 'Content-Type': 'application/json' }),

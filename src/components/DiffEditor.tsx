@@ -114,25 +114,18 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
     setIsDirty(false);
   }, [filePath, initialModified]);
 
-  // Immediate synchronous calculation of difference chunks so the counter is accurate instantly on load
+  // Immediate reset chunk count if editor only
   useEffect(() => {
     if (isEditorOnly) {
       setChunkCount(0);
-      return;
     }
-    try {
-      const stateA = EditorState.create({ doc: original });
-      const stateB = EditorState.create({ doc: initialModified });
-      const chunks = Chunk.build(stateA.doc, stateB.doc, {});
-      setChunkCount(chunks ? chunks.length : 0);
-    } catch (e) {
-      console.warn('Sync chunk calculation error:', e);
-    }
-  }, [filePath, original, initialModified, isEditorOnly]);
+  }, [isEditorOnly]);
 
-  // Diff Engine state (Monaco by default)
+  // Diff Engine state (CodeMirror 6 by default for instant <10ms rendering)
   const [diffEngine, setDiffEngine] = useState<DiffEngineType>(() => {
-    return (localStorage.getItem('ultra_diff_engine') as DiffEngineType) || 'monaco';
+    const saved = localStorage.getItem('ultra_diff_engine');
+    if (saved === 'monaco') return 'monaco';
+    return 'codemirror';
   });
 
   const handleEngineChange = (engine: DiffEngineType) => {
@@ -837,6 +830,51 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
 
           {/* Diff Engine Selector */}
           <div style={{ width: '1px', height: '16px', background: 'var(--jb-border)', margin: '0 4px' }} />
+          <div
+            style={{
+              display: 'inline-flex',
+              background: 'rgba(0, 0, 0, 0.25)',
+              borderRadius: '4px',
+              padding: '2px',
+              gap: '2px',
+              alignItems: 'center',
+            }}
+          >
+            <button
+              onClick={() => handleEngineChange('codemirror')}
+              title="CodeMirror 6 (Fast, <10ms)"
+              style={{
+                background: diffEngine === 'codemirror' ? 'var(--jb-accent)' : 'transparent',
+                color: diffEngine === 'codemirror' ? '#fff' : 'var(--jb-text-dim)',
+                border: 'none',
+                borderRadius: '3px',
+                padding: '2px 7px',
+                fontSize: '10px',
+                fontWeight: diffEngine === 'codemirror' ? 600 : 400,
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              Fast (CM6)
+            </button>
+            <button
+              onClick={() => handleEngineChange('monaco')}
+              title="Monaco Editor (VS Code engine)"
+              style={{
+                background: diffEngine === 'monaco' ? 'var(--jb-accent)' : 'transparent',
+                color: diffEngine === 'monaco' ? '#fff' : 'var(--jb-text-dim)',
+                border: 'none',
+                borderRadius: '3px',
+                padding: '2px 7px',
+                fontSize: '10px',
+                fontWeight: diffEngine === 'monaco' ? 600 : 400,
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              Monaco
+            </button>
+          </div>
 
         </div>
       </div>

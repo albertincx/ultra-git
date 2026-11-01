@@ -16,7 +16,7 @@ import {
   X,
 } from 'lucide-react';
 import { FsEntry, GitFileStatus } from '../types';
-import { fetchDirEntries, openInFinder } from '../api';
+import { fetchDirEntries, openInFinder, compareTwoFiles } from '../api';
 
 interface FileExplorerProps {
   repoName: string;
@@ -55,6 +55,13 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
       setSelectedFiles([selectedPath]);
     }
   }, [selectedPath]);
+
+  // Instantly prefetch compare content in background as soon as 2 files are selected
+  useEffect(() => {
+    if (selectedFiles.length === 2) {
+      compareTwoFiles(selectedFiles[0], selectedFiles[1]).catch(() => {});
+    }
+  }, [selectedFiles]);
 
   const handleFileClick = (e: React.MouseEvent, filePath: string, status?: GitFileStatus) => {
     if (e.metaKey || e.ctrlKey) {
