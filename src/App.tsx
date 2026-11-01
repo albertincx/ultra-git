@@ -18,6 +18,7 @@ import {
   saveProjectHistory,
   initGitRepoApi,
   compareTwoFiles,
+  openNativeTerminal,
 } from './api';
 import { GitFile, ChangelistState, ShelfItem, ProjectTab, GitFileStatus } from './types';
 import { ProjectTabs } from './components/ProjectTabs';
@@ -26,11 +27,11 @@ import { ChangesTree } from './components/ChangesTree';
 import { ShelfView } from './components/ShelfView';
 import { CommitBar } from './components/CommitBar';
 import { DiffEditor } from './components/DiffEditor';
-import { Terminal } from './components/Terminal';
 import { BottomBar } from './components/BottomBar';
 import { Layers, Archive, FileText } from 'lucide-react';
 
 const SAVED_PROJECTS_KEY = 'ultra_git_projects';
+const ACTIVE_PROJECT_KEY = 'ultra_active_project_id';
 
 export const App: React.FC = () => {
   // Project Tabs State
@@ -41,7 +42,15 @@ export const App: React.FC = () => {
     } catch {}
     return [];
   });
-  const [activeProjectId, setActiveProjectId] = useState<string>('');
+  const [activeProjectId, setActiveProjectId] = useState<string>(() => {
+    try {
+      return localStorage.getItem(ACTIVE_PROJECT_KEY) || '';
+    } catch {}
+    return '';
+  });
+
+  // Active Project Reference (guaranteed to match activeProjectId, with fallback to first tab)
+  const activeProject = projects.find((p) => p.id === activeProjectId) || projects[0] || null;
 
   // Tab: Local Changes | Shelf
   const [activeTab, setActiveTab] = useState<'changes' | 'shelf'>('changes');
@@ -76,43 +85,22 @@ export const App: React.FC = () => {
   const [sidebarWidth, setSidebarWidth] = useState(380);
   const isDraggingSplitter = useRef(false);
 
-  // Superlight Terminal State
-  const [isTerminalOpen, setIsTerminalOpen] = useState(() => {
-    try {
-      const saved = localStorage.getItem('ultra_terminal_open');
-      return saved !== null ? saved === 'true' : true;
-    } catch {}
-    return true;
-  });
-  const [terminalHeight, setTerminalHeight] = useState(() => {
-    try {
-      const saved = localStorage.getItem('ultra_terminal_height');
-      if (saved) return parseInt(saved, 10);
-    } catch {}
-    return 220;
-  });
-  const [isTerminalMaximized, setIsTerminalMaximized] = useState(false);
-  const isDraggingTerminal = useRef(false);
+  // Native macOS Terminal launcher
+  const handleOpenTerminal = useCallback(() => {
+    openNativeTerminal(activeProject?.repoRoot);
+  }, [activeProject]);
 
-  useEffect(() => {
-    localStorage.setItem('ultra_terminal_open', String(isTerminalOpen));
-  }, [isTerminalOpen]);
-
-  useEffect(() => {
-    localStorage.setItem('ultra_terminal_height', String(terminalHeight));
-  }, [terminalHeight]);
-
-  // Shortcut to toggle terminal (Ctrl+` or Alt+F12)
+  // Shortcut to open native macOS terminal (Ctrl+` or Alt+F12)
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey && e.key === '`') || (e.altKey && e.key === 'F12')) {
         e.preventDefault();
-        setIsTerminalOpen((prev) => !prev);
+        handleOpenTerminal();
       }
     };
     window.addEventListener('keydown', handleGlobalKeyDown);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-  }, []);
+  }, [handleOpenTerminal]);
 
   // Shelve dialog state
   const [shelveDialog, setShelveDialog] = useState<{
@@ -135,6 +123,19 @@ export const App: React.FC = () => {
     }
   }, [projects]);
 
+  // Centralized project switcher that immediately syncs API, storage, and UI states
+  const handleSelectProject = useCallback((id: string) => {
+    const target = projects.find((p) => p.id === id);
+    if (!target) return;
+    setActiveRepoRoot(target.repoRoot);
+    localStorage.setItem(ACTIVE_PROJECT_KEY, id);
+    setActiveProjectId(id);
+    setSelectedFile(null);
+    setDiffContent(null);
+    setCompareInfo(null);
+    setFiles([]);
+  }, [projects]);
+
   // Initial Load: initialize default repo tab and sync history
   useEffect(() => {
     const initDefault = async () => {
@@ -153,7 +154,11 @@ export const App: React.FC = () => {
           }
         }
 
-        if (info && info.repoRoot) {
+        // Determine which project should be active (respect saved user selection)
+        const savedActiveId = localStorage.getItem(ACTIVE_PROJECT_KEY);
+        let targetProj = combined.find((p) => p.id === savedActiveId);
+
+        if (!targetProj && info && info.repoRoot) {
           const matchIndex = combined.findIndex((p) => p.repoRoot === info.repoRoot);
           if (matchIndex >= 0) {
             combined[matchIndex] = {
@@ -162,8 +167,7 @@ export const App: React.FC = () => {
               repoName: info.repoName || combined[matchIndex].repoName,
               isGit: info.isGit,
             };
-            setActiveProjectId(combined[matchIndex].id);
-            setActiveRepoRoot(combined[matchIndex].repoRoot);
+            targetProj = combined[matchIndex];
           } else {
             const newTab: ProjectTab = {
               id: 'proj_' + Date.now(),
@@ -173,12 +177,18 @@ export const App: React.FC = () => {
               isGit: info.isGit,
             };
             combined = [newTab, ...combined];
-            setActiveProjectId(newTab.id);
-            setActiveRepoRoot(newTab.repoRoot);
+            targetProj = newTab;
           }
-        } else if (combined.length > 0) {
-          setActiveProjectId(combined[0].id);
-          setActiveRepoRoot(combined[0].repoRoot);
+        }
+
+        if (!targetProj && combined.length > 0) {
+          targetProj = combined[0];
+        }
+
+        if (targetProj) {
+          setActiveProjectId(targetProj.id);
+          setActiveRepoRoot(targetProj.repoRoot);
+          localStorage.setItem(ACTIVE_PROJECT_KEY, targetProj.id);
         }
 
         setProjects(combined);
@@ -192,9 +202,6 @@ export const App: React.FC = () => {
     };
     initDefault();
   }, []);
-
-  // Active Project Reference
-  const activeProject = projects.find((p) => p.id === activeProjectId);
 
   // Load Status for active project
   const loadStatus = useCallback(async () => {
@@ -242,6 +249,7 @@ export const App: React.FC = () => {
   useEffect(() => {
     if (activeProject) {
       setActiveRepoRoot(activeProject.repoRoot);
+      localStorage.setItem(ACTIVE_PROJECT_KEY, activeProject.id);
       setSelectedFile(null);
       setDiffContent(null);
       setCompareInfo(null);
@@ -254,7 +262,7 @@ export const App: React.FC = () => {
     const validated = await validateRepoPath(pathToAdd);
     const existing = projects.find((p) => p.repoRoot === validated.repoRoot);
     if (existing) {
-      setActiveProjectId(existing.id);
+      handleSelectProject(existing.id);
       return;
     }
 
@@ -268,8 +276,13 @@ export const App: React.FC = () => {
 
     const nextProjects = [...projects, newTab];
     setProjects(nextProjects);
-    setActiveProjectId(newTab.id);
     setActiveRepoRoot(newTab.repoRoot);
+    localStorage.setItem(ACTIVE_PROJECT_KEY, newTab.id);
+    setActiveProjectId(newTab.id);
+    setSelectedFile(null);
+    setDiffContent(null);
+    setCompareInfo(null);
+    setFiles([]);
   };
 
   // Close Project Tab
@@ -281,8 +294,9 @@ export const App: React.FC = () => {
 
     if (activeProjectId === idToClose) {
       const nextActive = nextProjects[Math.max(0, index - 1)];
-      setActiveProjectId(nextActive.id);
-      setActiveRepoRoot(nextActive.repoRoot);
+      if (nextActive) {
+        handleSelectProject(nextActive.id);
+      }
     }
   };
 
@@ -472,17 +486,12 @@ export const App: React.FC = () => {
       } else if (isDraggingHorizontal.current) {
         const newHeight = Math.max(100, Math.min(e.clientY - 38, window.innerHeight - 200));
         setExplorerHeight(newHeight);
-      } else if (isDraggingTerminal.current) {
-        const bottomBarHeight = 24;
-        const newHeight = Math.max(100, Math.min(window.innerHeight - e.clientY - bottomBarHeight, window.innerHeight - 140));
-        setTerminalHeight(newHeight);
       }
     };
 
     const handleMouseUp = () => {
       isDraggingSplitter.current = false;
       isDraggingHorizontal.current = false;
-      isDraggingTerminal.current = false;
       document.body.style.cursor = 'default';
     };
 
@@ -500,14 +509,14 @@ export const App: React.FC = () => {
       <ProjectTabs
         projects={projects}
         activeProjectId={activeProjectId}
-        onSelectProject={setActiveProjectId}
+        onSelectProject={handleSelectProject}
         onAddProject={handleAddProject}
         onCloseProject={handleCloseProject}
         onRefresh={loadStatus}
       />
 
       {/* Main Workspace Area */}
-      <div style={{ display: isTerminalMaximized ? 'none' : 'flex', flex: 1, overflow: 'hidden' }}>
+      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
         {/* Left Tool Window */}
         <div
           style={{
@@ -522,7 +531,9 @@ export const App: React.FC = () => {
           {/* Top Pane: File Explorer Tree View */}
           <div style={{ height: `${explorerHeight}px`, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             <FileExplorer
+              key={activeProject?.id || activeProject?.repoRoot || 'no-proj'}
               repoName={activeProject?.repoName || 'Project'}
+              repoRoot={activeProject?.repoRoot || ''}
               selectedPath={selectedFile?.path || null}
               onSelectFile={handleSelectExplorerFile}
               onCompareFiles={handleCompareFiles}
@@ -655,46 +666,10 @@ export const App: React.FC = () => {
         </div>
       </div>
 
-      {/* Superlight Terminal Panel */}
-      {isTerminalOpen && (
-        <>
-          {!isTerminalMaximized && (
-            <div
-              className="jb-resizer-horizontal"
-              onMouseDown={() => {
-                isDraggingTerminal.current = true;
-                document.body.style.cursor = 'row-resize';
-              }}
-              title="Drag to resize terminal"
-            />
-          )}
-          <div
-            style={{
-              height: isTerminalMaximized ? 'calc(100vh - 62px)' : `${terminalHeight}px`,
-              width: '100%',
-              display: 'flex',
-              flexDirection: 'column',
-              flexShrink: 0,
-              overflow: 'hidden',
-            }}
-          >
-            <Terminal
-              repoRoot={activeProject?.repoRoot}
-              repoName={activeProject?.repoName}
-              branch={activeProject?.branch}
-              isMaximized={isTerminalMaximized}
-              onToggleMaximize={() => setIsTerminalMaximized((prev) => !prev)}
-              onClose={() => setIsTerminalOpen(false)}
-            />
-          </div>
-        </>
-      )}
-
       {/* JetBrains-style Bottom Status Bar */}
       <BottomBar
-        isTerminalOpen={isTerminalOpen}
-        onToggleTerminal={() => setIsTerminalOpen((prev) => !prev)}
-        activeProject={activeProject}
+        onOpenTerminal={handleOpenTerminal}
+        activeProject={activeProject || undefined}
         modifiedCount={files.length}
       />
 

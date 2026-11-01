@@ -20,6 +20,7 @@ import { fetchDirEntries, openInFinder, compareTwoFiles } from '../api';
 
 interface FileExplorerProps {
   repoName: string;
+  repoRoot?: string;
   selectedPath: string | null;
   onSelectFile: (path: string, status?: GitFileStatus) => void;
   onCompareFiles?: (file1: string, file2: string) => void;
@@ -39,6 +40,7 @@ interface ContextMenuState {
 
 export const FileExplorer: React.FC<FileExplorerProps> = ({
   repoName,
+  repoRoot,
   selectedPath,
   onSelectFile,
   onCompareFiles,
@@ -110,12 +112,13 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
     }
   }, []);
 
-  // Initial root load
+  // Initial root load or project switch
   useEffect(() => {
     setCache({});
     setExpandedDirs(new Set(['']));
+    setSelectedFiles([]);
     loadDirectory('');
-  }, [repoName, loadDirectory]);
+  }, [repoRoot, repoName, loadDirectory]);
 
   const toggleDirectory = (dirPath: string) => {
     setExpandedDirs((prev) => {

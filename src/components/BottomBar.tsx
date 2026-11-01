@@ -4,15 +4,13 @@ import { ProjectTab } from '../types';
 import { openInFinder } from '../api';
 
 interface BottomBarProps {
-  isTerminalOpen: boolean;
-  onToggleTerminal: () => void;
+  onOpenTerminal: () => void;
   activeProject?: ProjectTab;
   modifiedCount: number;
 }
 
 export const BottomBar: React.FC<BottomBarProps> = ({
-  isTerminalOpen,
-  onToggleTerminal,
+  onOpenTerminal,
   activeProject,
   modifiedCount,
 }) => {
@@ -35,31 +33,31 @@ export const BottomBar: React.FC<BottomBarProps> = ({
     >
       {/* Left tool window toggles */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-        {/* Terminal toggle button */}
+        {/* Native macOS Terminal launcher button */}
         <button
-          onClick={onToggleTerminal}
+          onClick={onOpenTerminal}
           style={{
             display: 'inline-flex',
             alignItems: 'center',
             gap: '5px',
-            background: isTerminalOpen ? 'var(--jb-selection-bg)' : 'transparent',
-            color: isTerminalOpen ? '#ffffff' : 'var(--jb-text)',
+            background: 'transparent',
+            color: 'var(--jb-text)',
             border: 'none',
             borderRadius: '3px',
             padding: '2px 7px',
             cursor: 'pointer',
             fontSize: '11px',
-            fontWeight: isTerminalOpen ? 600 : 400,
+            fontWeight: 400,
             transition: 'background 0.1s, color 0.1s',
           }}
-          title="Toggle Terminal (Ctrl+` or Alt+F12)"
+          title="Open Native macOS Terminal in active project (Ctrl+` or Alt+F12)"
         >
-          <Terminal size={12} color={isTerminalOpen ? 'var(--jb-accent)' : 'currentColor'} />
+          <Terminal size={12} color="var(--jb-accent)" />
           <span>Terminal</span>
           <span
             style={{
               fontSize: '10px',
-              color: isTerminalOpen ? 'rgba(255, 255, 255, 0.7)' : 'var(--jb-text-dim)',
+              color: 'var(--jb-text-dim)',
               marginLeft: '2px',
             }}
           >

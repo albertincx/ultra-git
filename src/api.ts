@@ -343,6 +343,19 @@ export async function openExternalUrl(url: string): Promise<void> {
 }
 
 // Terminal APIs
+export async function openNativeTerminal(targetPath?: string): Promise<void> {
+  const p = targetPath || activeRepoRoot;
+  try {
+    await fetch(`${API_BASE}/terminal/open-native`, {
+      method: 'POST',
+      headers: getHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ path: p }),
+    });
+  } catch (e) {
+    console.error('Failed to open native terminal:', e);
+  }
+}
+
 export async function fetchTerminalInfo(sessionId = 'default'): Promise<{ cwd: string; repoRoot: string; repoName: string }> {
   const res = await fetch(`${API_BASE}/terminal/info?sessionId=${encodeURIComponent(sessionId)}`, {
     headers: getHeaders(),

@@ -409,6 +409,19 @@ const server = http.createServer(async (req, res) => {
     }
 
     // Terminal APIs
+    if (pathname === '/api/terminal/open-native' && req.method === 'POST') {
+      try {
+        const body = await parseJsonBody(req).catch(() => ({}));
+        const targetDir = body.path || currentRepo || defaultRepoRoot;
+        execFile('open', ['-a', 'Terminal', targetDir], (err) => {
+          if (err) console.error('Failed to open native macOS Terminal:', err);
+        });
+        return sendJson(res, 200, { ok: true, path: targetDir });
+      } catch (e) {
+        return sendJson(res, 500, { error: e.message });
+      }
+    }
+
     if (pathname === '/api/terminal/info' && req.method === 'GET') {
       const sessionId = parsedUrl.query.sessionId || 'default';
       const sessionCwd = terminalSessionCwd.get(sessionId) || currentRepo;
