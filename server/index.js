@@ -192,19 +192,21 @@ const server = http.createServer(async (req, res) => {
               return sendJson(res, 200, {
                 projects: Array.isArray(data.projects) ? data.projects : [],
                 recent: Array.isArray(data.recent) ? data.recent : [],
+                activeProjectId: data.activeProjectId || '',
+                activeRepoRoot: data.activeRepoRoot || '',
               });
             }
           }
         } catch (e) {
           console.warn('Recovered from invalid history file, resetting history:', e.message);
         }
-        return sendJson(res, 200, { projects: [], recent: [] });
+        return sendJson(res, 200, { projects: [], recent: [], activeProjectId: '', activeRepoRoot: '' });
       }
 
       if (req.method === 'POST') {
         try {
           const body = await parseJsonBody(req);
-          let current = { projects: [], recent: [] };
+          let current = { projects: [], recent: [], activeProjectId: '', activeRepoRoot: '' };
           if (fs.existsSync(historyFile)) {
             try {
               const raw = await fs.promises.readFile(historyFile, 'utf8');
@@ -213,6 +215,8 @@ const server = http.createServer(async (req, res) => {
                 current = {
                   projects: Array.isArray(parsed.projects) ? parsed.projects : [],
                   recent: Array.isArray(parsed.recent) ? parsed.recent : [],
+                  activeProjectId: parsed.activeProjectId || '',
+                  activeRepoRoot: parsed.activeRepoRoot || '',
                 };
               }
             } catch {}
@@ -220,6 +224,8 @@ const server = http.createServer(async (req, res) => {
           const updated = {
             projects: Array.isArray(body.projects) ? body.projects : current.projects,
             recent: Array.isArray(body.recent) ? body.recent : current.recent,
+            activeProjectId: body.activeProjectId !== undefined ? body.activeProjectId : current.activeProjectId,
+            activeRepoRoot: body.activeRepoRoot !== undefined ? body.activeRepoRoot : current.activeRepoRoot,
           };
           await atomicWriteFile(historyFile, JSON.stringify(updated, null, 2));
           return sendJson(res, 200, { ok: true });

@@ -13,6 +13,7 @@ import {
   deleteShelf,
   rollbackFile,
   setActiveRepoRoot,
+  getActiveRepoRoot,
   validateRepoPath,
   fetchProjectHistory,
   saveProjectHistory,
@@ -52,6 +53,11 @@ export const App: React.FC = () => {
 
   // Active Project Reference (guaranteed to match activeProjectId, with fallback to first tab)
   const activeProject = projects.find((p) => p.id === activeProjectId) || projects[0] || null;
+
+  // Synchronously ensure activeRepoRoot in api.ts is immediately set for activeProject
+  if (activeProject?.repoRoot && getActiveRepoRoot() !== activeProject.repoRoot) {
+    setActiveRepoRoot(activeProject.repoRoot);
+  }
 
   // Tab: Local Changes | Shelf
   const [activeTab, setActiveTab] = useState<'changes' | 'shelf'>('changes');
@@ -127,9 +133,16 @@ export const App: React.FC = () => {
   useEffect(() => {
     if (projects.length > 0) {
       localStorage.setItem(SAVED_PROJECTS_KEY, JSON.stringify(projects));
-      saveProjectHistory({ projects });
+      if (activeProjectId) {
+        localStorage.setItem(ACTIVE_PROJECT_KEY, activeProjectId);
+      }
+      saveProjectHistory({
+        projects,
+        activeProjectId,
+        activeRepoRoot: activeProject?.repoRoot,
+      });
     }
-  }, [projects]);
+  }, [projects, activeProjectId, activeProject]);
 
   // Centralized project switcher that immediately syncs API, storage, and UI states
   const handleSelectProject = useCallback((id: string) => {
@@ -142,6 +155,11 @@ export const App: React.FC = () => {
     setDiffContent(null);
     setCompareInfo(null);
     setFiles([]);
+    saveProjectHistory({
+      projects,
+      activeProjectId: id,
+      activeRepoRoot: target.repoRoot,
+    });
   }, [projects]);
 
   // Initial Load: initialize default repo tab and sync history
@@ -166,6 +184,13 @@ export const App: React.FC = () => {
         const savedActiveId = localStorage.getItem(ACTIVE_PROJECT_KEY);
         let targetProj = combined.find((p) => p.id === savedActiveId);
 
+        if (!targetProj && history?.activeProjectId) {
+          targetProj = combined.find((p) => p.id === history.activeProjectId);
+        }
+        if (!targetProj && history?.activeRepoRoot) {
+          targetProj = combined.find((p) => p.repoRoot === history.activeRepoRoot);
+        }
+
         if (!targetProj && info && info.repoRoot) {
           const matchIndex = combined.findIndex((p) => p.repoRoot === info.repoRoot);
           if (matchIndex >= 0) {
@@ -184,25 +209,30 @@ export const App: React.FC = () => {
               branch: info.branch,
               isGit: info.isGit,
             };
-            combined = [newTab, ...combined];
+            combined = [...combined, newTab];
             targetProj = newTab;
           }
         }
 
         if (!targetProj && combined.length > 0) {
-          targetProj = combined[0];
+          targetProj = combined[combined.length - 1] || combined[0];
         }
 
         if (targetProj) {
           setActiveProjectId(targetProj.id);
           setActiveRepoRoot(targetProj.repoRoot);
           localStorage.setItem(ACTIVE_PROJECT_KEY, targetProj.id);
+          await loadStatus(targetProj);
         }
 
         setProjects(combined);
         if (combined.length > 0) {
           localStorage.setItem(SAVED_PROJECTS_KEY, JSON.stringify(combined));
-          saveProjectHistory({ projects: combined });
+          saveProjectHistory({
+            projects: combined,
+            activeProjectId: targetProj?.id,
+            activeRepoRoot: targetProj?.repoRoot,
+          });
         }
       } catch (e) {
         console.error('Failed to init repository:', e);
@@ -212,22 +242,23 @@ export const App: React.FC = () => {
   }, []);
 
   // Load Status for active project
-  const loadStatus = useCallback(async () => {
-    if (!activeProject) return;
+  const loadStatus = useCallback(async (targetProj?: ProjectTab | null) => {
+    const proj = targetProj || activeProject;
+    if (!proj) return;
     try {
-      setActiveRepoRoot(activeProject.repoRoot);
+      setActiveRepoRoot(proj.repoRoot);
       const [status, shelf] = await Promise.all([
-        fetchGitStatus(),
-        fetchShelfList(),
+        fetchGitStatus(proj.repoRoot),
+        fetchShelfList(proj.repoRoot),
       ]);
 
       if (
-        (status.branch && status.branch !== activeProject.branch) ||
-        (status.isGit !== undefined && status.isGit !== activeProject.isGit)
+        (status.branch && status.branch !== proj.branch) ||
+        (status.isGit !== undefined && status.isGit !== proj.isGit)
       ) {
         setProjects((prev) =>
           prev.map((p) =>
-            p.id === activeProject.id
+            p.id === proj.id
               ? { ...p, branch: status.branch || p.branch, isGit: status.isGit !== undefined ? status.isGit : p.isGit }
               : p
           )
@@ -261,7 +292,7 @@ export const App: React.FC = () => {
       setSelectedFile(null);
       setDiffContent(null);
       setCompareInfo(null);
-      loadStatus();
+      loadStatus(activeProject);
     }
   }, [activeProjectId]);
 

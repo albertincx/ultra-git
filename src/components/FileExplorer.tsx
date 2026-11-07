@@ -16,7 +16,7 @@ import {
   X,
 } from 'lucide-react';
 import { FsEntry, GitFileStatus } from '../types';
-import { fetchDirEntries, openInFinder, compareTwoFiles } from '../api';
+import { fetchDirEntries, openInFinder, compareTwoFiles, getActiveRepoRoot } from '../api';
 
 interface FileExplorerProps {
   repoName: string;
@@ -122,9 +122,11 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
 
   // Load a directory if not cached
   const loadDirectory = useCallback(async (dirPath: string) => {
+    const targetRoot = repoRoot || getActiveRepoRoot();
+    if (!targetRoot) return;
     setLoadingDirs((prev) => new Set(prev).add(dirPath));
     try {
-      const entries = await fetchDirEntries(dirPath);
+      const entries = await fetchDirEntries(dirPath, targetRoot);
       setCache((prev) => ({ ...prev, [dirPath]: entries }));
     } catch (e) {
       console.error('Failed to load dir:', dirPath, e);
@@ -135,14 +137,17 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
         return next;
       });
     }
-  }, []);
+  }, [repoRoot]);
 
   // Initial root load or project switch
   useEffect(() => {
     setCache({});
     setExpandedDirs(new Set(['']));
     setSelectedFiles([]);
-    loadDirectory('');
+    setSelectedFolders([]);
+    if (repoRoot || getActiveRepoRoot()) {
+      loadDirectory('');
+    }
   }, [repoRoot, repoName, loadDirectory]);
 
   const toggleDirectory = (dirPath: string) => {

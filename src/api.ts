@@ -2,7 +2,26 @@ import { GitFile, ChangelistState, ShelfItem, ProjectTab, FsEntry, RecentProject
 
 const API_BASE = '/api';
 
-let activeRepoRoot: string = '';
+function getInitialRepoRoot(): string {
+  try {
+    const savedProjects = localStorage.getItem('ultra_git_projects');
+    const savedActiveId = localStorage.getItem('ultra_active_project_id');
+    if (savedProjects) {
+      const list = JSON.parse(savedProjects);
+      if (Array.isArray(list) && list.length > 0) {
+        if (savedActiveId) {
+          const match = list.find((p: any) => p && p.id === savedActiveId);
+          if (match && match.repoRoot) return match.repoRoot;
+        }
+        const last = list[list.length - 1];
+        if (last && last.repoRoot) return last.repoRoot;
+      }
+    }
+  } catch {}
+  return '';
+}
+
+let activeRepoRoot: string = getInitialRepoRoot();
 
 export function setActiveRepoRoot(path: string) {
   activeRepoRoot = path;
@@ -14,7 +33,7 @@ export function getActiveRepoRoot() {
 
 function getHeaders(customHeaders: Record<string, string> = {}) {
   const headers: Record<string, string> = { ...customHeaders };
-  if (activeRepoRoot) {
+  if (!headers['X-Repo-Path'] && activeRepoRoot) {
     headers['X-Repo-Path'] = activeRepoRoot;
   }
   return headers;
@@ -45,17 +64,19 @@ export async function validateRepoPath(path: string): Promise<{
   return res.json();
 }
 
-export async function fetchDirEntries(subPath = ''): Promise<FsEntry[]> {
+export async function fetchDirEntries(subPath = '', repoRoot?: string): Promise<FsEntry[]> {
+  const targetRoot = repoRoot || activeRepoRoot;
   const res = await fetch(`${API_BASE}/fs/dir?path=${encodeURIComponent(subPath)}`, {
-    headers: getHeaders(),
+    headers: getHeaders(targetRoot ? { 'X-Repo-Path': targetRoot } : {}),
   });
   if (!res.ok) throw new Error('Failed to read directory');
   return res.json();
 }
 
-export async function fetchRepoInfo(): Promise<{ repoRoot: string; repoName: string; branch: string; isGit?: boolean }> {
+export async function fetchRepoInfo(repoRoot?: string): Promise<{ repoRoot: string; repoName: string; branch: string; isGit?: boolean }> {
+  const targetRoot = repoRoot || activeRepoRoot;
   const res = await fetch(`${API_BASE}/repo`, {
-    headers: getHeaders(),
+    headers: getHeaders(targetRoot ? { 'X-Repo-Path': targetRoot } : {}),
   });
   return res.json();
 }
@@ -91,23 +112,25 @@ export async function setRepoPath(path: string): Promise<{ repoRoot: string; rep
   return res.json();
 }
 
-export async function fetchGitStatus(): Promise<{
+export async function fetchGitStatus(repoRoot?: string): Promise<{
   files: GitFile[];
   changelists: ChangelistState;
   branch: string;
   repoRoot: string;
   isGit?: boolean;
 }> {
+  const targetRoot = repoRoot || activeRepoRoot;
   const res = await fetch(`${API_BASE}/status`, {
-    headers: getHeaders(),
+    headers: getHeaders(targetRoot ? { 'X-Repo-Path': targetRoot } : {}),
   });
   if (!res.ok) throw new Error('Failed to fetch git status');
   return res.json();
 }
 
-export async function fetchFileContent(filePath: string, rev = 'HEAD'): Promise<{ original: string; modified: string; path: string }> {
+export async function fetchFileContent(filePath: string, rev = 'HEAD', repoRoot?: string): Promise<{ original: string; modified: string; path: string }> {
+  const targetRoot = repoRoot || activeRepoRoot;
   const res = await fetch(`${API_BASE}/file/content?path=${encodeURIComponent(filePath)}&rev=${encodeURIComponent(rev)}`, {
-    headers: getHeaders(),
+    headers: getHeaders(targetRoot ? { 'X-Repo-Path': targetRoot } : {}),
   });
   if (!res.ok) throw new Error('Failed to fetch file content');
   return res.json();
@@ -248,9 +271,10 @@ export async function setActiveChangelist(id: string): Promise<ChangelistState> 
 }
 
 // Shelf
-export async function fetchShelfList(): Promise<ShelfItem[]> {
+export async function fetchShelfList(repoRoot?: string): Promise<ShelfItem[]> {
+  const targetRoot = repoRoot || activeRepoRoot;
   const res = await fetch(`${API_BASE}/shelf/list`, {
-    headers: getHeaders(),
+    headers: getHeaders(targetRoot ? { 'X-Repo-Path': targetRoot } : {}),
   });
   return res.json();
 }
@@ -297,7 +321,12 @@ export async function deleteShelf(id: string): Promise<ShelfItem[]> {
   return res.json();
 }
 
-export async function fetchProjectHistory(): Promise<{ projects: ProjectTab[]; recent: RecentProject[] }> {
+export async function fetchProjectHistory(): Promise<{
+  projects: ProjectTab[];
+  recent: RecentProject[];
+  activeProjectId?: string;
+  activeRepoRoot?: string;
+}> {
   try {
     const res = await fetch(`${API_BASE}/projects/history`);
     if (res.ok) return await res.json();
@@ -305,7 +334,12 @@ export async function fetchProjectHistory(): Promise<{ projects: ProjectTab[]; r
   return { projects: [], recent: [] };
 }
 
-export async function saveProjectHistory(data: { projects?: ProjectTab[]; recent?: RecentProject[] }): Promise<void> {
+export async function saveProjectHistory(data: {
+  projects?: ProjectTab[];
+  recent?: RecentProject[];
+  activeProjectId?: string;
+  activeRepoRoot?: string;
+}): Promise<void> {
   try {
     await fetch(`${API_BASE}/projects/history`, {
       method: 'POST',
