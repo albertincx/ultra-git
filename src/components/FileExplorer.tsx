@@ -24,6 +24,7 @@ interface FileExplorerProps {
   selectedPath: string | null;
   onSelectFile: (path: string, status?: GitFileStatus) => void;
   onCompareFiles?: (file1: string, file2: string) => void;
+  onCompareDirectories?: (dir1: string, dir2: string) => void;
 }
 
 interface DirCache {
@@ -44,16 +45,18 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
   selectedPath,
   onSelectFile,
   onCompareFiles,
+  onCompareDirectories,
 }) => {
   const [cache, setCache] = useState<DirCache>({});
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set(['']));
   const [loadingDirs, setLoadingDirs] = useState<Set<string>>(new Set());
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
+  const [selectedFolders, setSelectedFolders] = useState<string[]>([]);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
 
   // Sync selectedPath into selectedFiles if selectedFiles is empty
   useEffect(() => {
-    if (selectedPath && selectedFiles.length === 0) {
+    if (selectedPath && selectedFiles.length === 0 && selectedFolders.length === 0) {
       setSelectedFiles([selectedPath]);
     }
   }, [selectedPath]);
@@ -66,6 +69,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
   }, [selectedFiles]);
 
   const handleFileClick = (e: React.MouseEvent, filePath: string, status?: GitFileStatus) => {
+    setSelectedFolders([]);
     if (e.metaKey || e.ctrlKey) {
       e.preventDefault();
       setSelectedFiles((prev) => {
@@ -81,6 +85,27 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
     } else {
       setSelectedFiles([filePath]);
       onSelectFile(filePath, status);
+    }
+  };
+
+  const handleFolderClick = (e: React.MouseEvent, folderPath: string) => {
+    if (e.metaKey || e.ctrlKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      setSelectedFiles([]);
+      setSelectedFolders((prev) => {
+        if (prev.includes(folderPath)) {
+          return prev.filter((p) => p !== folderPath);
+        }
+        if (prev.length >= 2) {
+          return [prev[0], folderPath];
+        }
+        return [...prev, folderPath];
+      });
+    } else {
+      toggleDirectory(folderPath);
+      setSelectedFolders([folderPath]);
+      setSelectedFiles([]);
     }
   };
 
@@ -142,8 +167,27 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
   const handleContextMenu = (e: React.MouseEvent, path: string, name: string, isDir: boolean) => {
     e.preventDefault();
     e.stopPropagation();
-    const x = Math.min(e.clientX, window.innerWidth - 210);
-    const y = Math.min(e.clientY, window.innerHeight - 140);
+    if (isDir) {
+      if (!selectedFolders.includes(path)) {
+        if (selectedFolders.length === 1) {
+          // Keep selected folder so user can compare with it
+        } else {
+          setSelectedFolders([path]);
+          setSelectedFiles([]);
+        }
+      }
+    } else {
+      if (!selectedFiles.includes(path)) {
+        if (selectedFiles.length === 1) {
+          // Keep selected file so user can compare with it
+        } else {
+          setSelectedFiles([path]);
+          setSelectedFolders([]);
+        }
+      }
+    }
+    const x = Math.min(e.clientX, window.innerWidth - 220);
+    const y = Math.min(e.clientY, window.innerHeight - 180);
     setContextMenu({ x, y, path, name, isDir });
   };
 
@@ -197,6 +241,9 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
     return entries.map((entry) => {
       if (entry.isDir) {
         const isExpanded = expandedDirs.has(entry.path);
+        const isMultiSelectedFolder = selectedFolders.includes(entry.path);
+        const folderSelectIndex = selectedFolders.indexOf(entry.path);
+
         return (
           <div key={entry.path}>
             <div
@@ -209,16 +256,26 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
                 cursor: 'pointer',
                 fontSize: '12px',
                 color: 'var(--jb-text)',
+                background: isMultiSelectedFolder ? 'var(--jb-selection-bg)' : 'transparent',
+                borderLeft: isMultiSelectedFolder && selectedFolders.length === 2 ? '2px solid var(--jb-accent)' : '2px solid transparent',
               }}
-              onClick={() => toggleDirectory(entry.path)}
+              onClick={(e) => handleFolderClick(e, entry.path)}
               onContextMenu={(e) => handleContextMenu(e, entry.path, entry.name, true)}
               className="jb-tree-row"
             >
-              {isExpanded ? (
-                <ChevronDown size={12} style={{ marginRight: '4px', color: 'var(--jb-text-dim)', flexShrink: 0 }} />
-              ) : (
-                <ChevronRight size={12} style={{ marginRight: '4px', color: 'var(--jb-text-dim)', flexShrink: 0 }} />
-              )}
+              <span
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleDirectory(entry.path);
+                }}
+                style={{ display: 'inline-flex', alignItems: 'center', marginRight: '4px' }}
+              >
+                {isExpanded ? (
+                  <ChevronDown size={12} style={{ color: 'var(--jb-text-dim)', flexShrink: 0 }} />
+                ) : (
+                  <ChevronRight size={12} style={{ color: 'var(--jb-text-dim)', flexShrink: 0 }} />
+                )}
+              </span>
 
               {isExpanded ? (
                 <FolderOpen size={13} style={{ marginRight: '6px', color: '#e5ba64', flexShrink: 0 }} />
@@ -226,9 +283,28 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
                 <Folder size={13} style={{ marginRight: '6px', color: '#e5ba64', flexShrink: 0 }} />
               )}
 
-              <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>
                 {entry.name}
               </span>
+
+              {isMultiSelectedFolder && selectedFolders.length > 1 && (
+                <span
+                  style={{
+                    fontSize: '9px',
+                    background: 'var(--jb-accent)',
+                    color: '#fff',
+                    padding: '1px 5px',
+                    borderRadius: '3px',
+                    marginLeft: '4px',
+                    fontWeight: 700,
+                    flexShrink: 0,
+                    lineHeight: '1',
+                  }}
+                  title={`Selected for directory comparison (#${folderSelectIndex + 1})`}
+                >
+                  #{folderSelectIndex + 1}
+                </span>
+              )}
             </div>
 
             {isExpanded && renderEntries(entry.path, depth + 1)}
@@ -339,6 +415,26 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          {selectedFolders.length === 2 && onCompareDirectories && (
+            <button
+              className="jb-btn-primary"
+              style={{
+                height: '20px',
+                padding: '0 8px',
+                fontSize: '11px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                fontWeight: 600,
+              }}
+              onClick={() => onCompareDirectories(selectedFolders[0], selectedFolders[1])}
+              title={`Compare ${selectedFolders[0]} and ${selectedFolders[1]}`}
+            >
+              <GitCompare size={12} />
+              <span>Compare Dirs</span>
+            </button>
+          )}
+
           {selectedFiles.length === 2 && onCompareFiles && (
             <button
               className="jb-btn-primary"
@@ -369,6 +465,50 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
           </button>
         </div>
       </div>
+
+      {/* 2-Folders Compare Banner */}
+      {selectedFolders.length === 2 && onCompareDirectories && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '5px 8px',
+            background: 'rgba(86, 168, 245, 0.15)',
+            borderBottom: '1px solid var(--jb-border)',
+            fontSize: '11px',
+            color: 'var(--jb-text)',
+            gap: '6px',
+            flexShrink: 0,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '5px', overflow: 'hidden', flex: 1 }}>
+            <GitCompare size={12} color="var(--jb-accent)" style={{ flexShrink: 0 }} />
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '11px' }}>
+              Compare Dirs: <b>{selectedFolders[0].split('/').pop() || selectedFolders[0] || '.'}</b> ↔ <b>{selectedFolders[1].split('/').pop() || selectedFolders[1] || '.'}</b>
+            </span>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
+            <button
+              className="jb-btn-primary"
+              style={{ height: '20px', padding: '0 8px', fontSize: '10px', display: 'flex', alignItems: 'center', gap: '3px' }}
+              onClick={() => onCompareDirectories(selectedFolders[0], selectedFolders[1])}
+            >
+              <GitCompare size={10} />
+              Compare
+            </button>
+            <button
+              className="jb-icon-btn"
+              style={{ width: '18px', height: '18px' }}
+              onClick={() => setSelectedFolders([])}
+              title="Clear selection"
+            >
+              <X size={11} />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* 2-Files Compare Banner */}
       {selectedFiles.length === 2 && onCompareFiles && (
@@ -426,7 +566,63 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
           style={{ top: contextMenu.y, left: contextMenu.x }}
           onClick={(e) => e.stopPropagation()}
         >
-          {selectedFiles.length === 2 && onCompareFiles && (
+          {/* 2 Folders Selected -> Compare Directories */}
+          {contextMenu.isDir && selectedFolders.length === 2 && onCompareDirectories && (
+            <>
+              <div
+                className="jb-menu-item"
+                onClick={() => {
+                  setContextMenu(null);
+                  onCompareDirectories(selectedFolders[0], selectedFolders[1]);
+                }}
+              >
+                <GitCompare size={14} color="var(--jb-accent)" />
+                <span>Compare Directories</span>
+              </div>
+              <div className="jb-menu-separator" />
+            </>
+          )}
+
+          {/* 1 Folder Selected + Right Click another Folder */}
+          {contextMenu.isDir && selectedFolders.length === 1 && selectedFolders[0] !== contextMenu.path && onCompareDirectories && (
+            <>
+              <div
+                className="jb-menu-item"
+                onClick={() => {
+                  const d1 = selectedFolders[0];
+                  const d2 = contextMenu.path;
+                  setContextMenu(null);
+                  setSelectedFolders([d1, d2]);
+                  onCompareDirectories(d1, d2);
+                }}
+              >
+                <GitCompare size={14} color="var(--jb-accent)" />
+                <span>Compare with "{selectedFolders[0].split('/').pop() || selectedFolders[0] || '.'}"</span>
+              </div>
+              <div className="jb-menu-separator" />
+            </>
+          )}
+
+          {/* Select folder for compare */}
+          {contextMenu.isDir && (
+            <>
+              <div
+                className="jb-menu-item"
+                onClick={() => {
+                  setSelectedFolders([contextMenu.path]);
+                  setSelectedFiles([]);
+                  setContextMenu(null);
+                }}
+              >
+                <GitCompare size={14} />
+                <span>Select for Compare</span>
+              </div>
+              <div className="jb-menu-separator" />
+            </>
+          )}
+
+          {/* 2 Files Selected */}
+          {!contextMenu.isDir && selectedFiles.length === 2 && onCompareFiles && (
             <>
               <div
                 className="jb-menu-item"
@@ -442,6 +638,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
             </>
           )}
 
+          {/* 1 File Selected + Right Click another File */}
           {!contextMenu.isDir && selectedFiles.length === 1 && selectedFiles[0] !== contextMenu.path && onCompareFiles && (
             <>
               <div
@@ -461,12 +658,14 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
             </>
           )}
 
+          {/* Select file for compare */}
           {!contextMenu.isDir && (
             <>
               <div
                 className="jb-menu-item"
                 onClick={() => {
                   setSelectedFiles([contextMenu.path]);
+                  setSelectedFolders([]);
                   setContextMenu(null);
                 }}
               >

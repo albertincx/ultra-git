@@ -119,7 +119,7 @@ function serveStatic(req, res, pathname) {
     const contentType = MIME_TYPES[ext] || 'application/octet-stream';
     res.writeHead(200, {
       'Content-Type': contentType,
-      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
       'Pragma': 'no-cache',
       'Expires': '0',
     });
@@ -698,6 +698,224 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { path1, path2, content1, content2 });
     }
 
+    // Compare two directories recursively (WebStorm style directory compare)
+    if (pathname === '/api/dir/compare' && req.method === 'GET') {
+      const dir1 = parsedUrl.query.dir1 !== undefined ? String(parsedUrl.query.dir1).trim() : null;
+      const dir2 = parsedUrl.query.dir2 !== undefined ? String(parsedUrl.query.dir2).trim() : null;
+      if (dir1 === null || dir2 === null) {
+        return sendJson(res, 400, { error: 'dir1 and dir2 are required' });
+      }
+
+      const fullPath1 = path.resolve(currentRepo, dir1);
+      const fullPath2 = path.resolve(currentRepo, dir2);
+
+      if (!fullPath1.startsWith(currentRepo) || !fullPath2.startsWith(currentRepo)) {
+        return sendJson(res, 403, { error: 'Access denied: directory outside project' });
+      }
+
+      if (!fs.existsSync(fullPath1) || !fs.statSync(fullPath1).isDirectory()) {
+        return sendJson(res, 400, { error: `Directory 1 does not exist or is not a directory: ${dir1}` });
+      }
+      if (!fs.existsSync(fullPath2) || !fs.statSync(fullPath2).isDirectory()) {
+        return sendJson(res, 400, { error: `Directory 2 does not exist or is not a directory: ${dir2}` });
+      }
+
+      async function getDirFilesRecursive(baseDir, currentRel = '') {
+        const fullDir = currentRel ? path.join(baseDir, currentRel) : baseDir;
+        let entries = [];
+        try {
+          entries = await fs.promises.readdir(fullDir, { withFileTypes: true });
+        } catch {
+          return new Map();
+        }
+        const map = new Map();
+        for (const entry of entries) {
+          if (entry.name === '.git' || entry.name === '.DS_Store') continue;
+          const relPath = currentRel ? `${currentRel}/${entry.name}` : entry.name;
+          if (entry.isDirectory()) {
+            const sub = await getDirFilesRecursive(baseDir, relPath);
+            for (const [k, v] of sub.entries()) {
+              map.set(k, v);
+            }
+          } else if (entry.isFile()) {
+            try {
+              const stat = await fs.promises.stat(path.join(baseDir, relPath));
+              map.set(relPath, {
+                size: stat.size,
+                mtime: stat.mtimeMs,
+              });
+            } catch {}
+          }
+        }
+        return map;
+      }
+
+      const [files1, files2] = await Promise.all([
+        getDirFilesRecursive(fullPath1),
+        getDirFilesRecursive(fullPath2),
+      ]);
+
+      const allKeys = new Set([...files1.keys(), ...files2.keys()]);
+      const items = [];
+      let differentCount = 0;
+      let leftOnlyCount = 0;
+      let rightOnlyCount = 0;
+      let sameCount = 0;
+
+      for (const relPath of allKeys) {
+        const in1 = files1.has(relPath);
+        const in2 = files2.has(relPath);
+        const info1 = files1.get(relPath);
+        const info2 = files2.get(relPath);
+        const name = path.basename(relPath);
+
+        if (in1 && !in2) {
+          leftOnlyCount++;
+          items.push({
+            relPath,
+            name,
+            status: 'left_only',
+            size1: info1.size,
+            size2: null,
+            mtime1: info1.mtime,
+            mtime2: null,
+          });
+        } else if (!in1 && in2) {
+          rightOnlyCount++;
+          items.push({
+            relPath,
+            name,
+            status: 'right_only',
+            size1: null,
+            size2: info2.size,
+            mtime1: null,
+            mtime2: info2.mtime,
+          });
+        } else {
+          // Both exist
+          if (info1.size !== info2.size) {
+            differentCount++;
+            items.push({
+              relPath,
+              name,
+              status: 'different',
+              size1: info1.size,
+              size2: info2.size,
+              mtime1: info1.mtime,
+              mtime2: info2.mtime,
+            });
+          } else {
+            // Compare buffer/content
+            try {
+              const [buf1, buf2] = await Promise.all([
+                fs.promises.readFile(path.join(fullPath1, relPath)),
+                fs.promises.readFile(path.join(fullPath2, relPath)),
+              ]);
+              if (buf1.equals(buf2)) {
+                sameCount++;
+                items.push({
+                  relPath,
+                  name,
+                  status: 'same',
+                  size1: info1.size,
+                  size2: info2.size,
+                  mtime1: info1.mtime,
+                  mtime2: info2.mtime,
+                });
+              } else {
+                differentCount++;
+                items.push({
+                  relPath,
+                  name,
+                  status: 'different',
+                  size1: info1.size,
+                  size2: info2.size,
+                  mtime1: info1.mtime,
+                  mtime2: info2.mtime,
+                });
+              }
+            } catch {
+              differentCount++;
+              items.push({
+                relPath,
+                name,
+                status: 'different',
+                size1: info1.size,
+                size2: info2.size,
+                mtime1: info1.mtime,
+                mtime2: info2.mtime,
+              });
+            }
+          }
+        }
+      }
+
+      // Sort items: different first, then left_only, then right_only, then same, alphabetically by relPath
+      const statusPriority = { different: 1, left_only: 2, right_only: 3, same: 4 };
+      items.sort((a, b) => {
+        const pDiff = (statusPriority[a.status] || 99) - (statusPriority[b.status] || 99);
+        if (pDiff !== 0) return pDiff;
+        return a.relPath.localeCompare(b.relPath);
+      });
+
+      return sendJson(res, 200, {
+        dir1,
+        dir2,
+        items,
+        summary: {
+          total: items.length,
+          different: differentCount,
+          leftOnly: leftOnlyCount,
+          rightOnly: rightOnlyCount,
+          same: sameCount,
+        },
+      });
+    }
+
+    // Sync or copy file between two compared directories
+    if (pathname === '/api/dir/sync-file' && req.method === 'POST') {
+      const body = await parseJsonBody(req);
+      const { dir1, dir2, relPath, action } = body;
+      if (dir1 === undefined || dir2 === undefined || !relPath || !action) {
+        return sendJson(res, 400, { error: 'dir1, dir2, relPath, and action are required' });
+      }
+
+      const fullPath1 = path.resolve(currentRepo, dir1, relPath);
+      const fullPath2 = path.resolve(currentRepo, dir2, relPath);
+
+      if (!fullPath1.startsWith(currentRepo) || !fullPath2.startsWith(currentRepo)) {
+        return sendJson(res, 403, { error: 'Access denied: path outside project' });
+      }
+
+      if (action === 'copy_to_right') {
+        if (!fs.existsSync(fullPath1)) {
+          return sendJson(res, 400, { error: 'Source file does not exist on left side' });
+        }
+        await fs.promises.mkdir(path.dirname(fullPath2), { recursive: true });
+        await fs.promises.copyFile(fullPath1, fullPath2);
+        return sendJson(res, 200, { success: true });
+      } else if (action === 'copy_to_left') {
+        if (!fs.existsSync(fullPath2)) {
+          return sendJson(res, 400, { error: 'Source file does not exist on right side' });
+        }
+        await fs.promises.mkdir(path.dirname(fullPath1), { recursive: true });
+        await fs.promises.copyFile(fullPath2, fullPath1);
+        return sendJson(res, 200, { success: true });
+      } else if (action === 'delete_left') {
+        if (fs.existsSync(fullPath1)) {
+          await fs.promises.unlink(fullPath1);
+        }
+        return sendJson(res, 200, { success: true });
+      } else if (action === 'delete_right') {
+        if (fs.existsSync(fullPath2)) {
+          await fs.promises.unlink(fullPath2);
+        }
+        return sendJson(res, 200, { success: true });
+      } else {
+        return sendJson(res, 400, { error: `Invalid action: ${action}` });
+      }
+    }
+
     if (pathname === '/api/file/save' && req.method === 'POST') {
       const body = await parseJsonBody(req);
       if (!body.path || body.content === undefined) {
@@ -813,7 +1031,7 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-const PORT = 3737;
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3737;
 initRepo(process.argv[2] || process.cwd()).then((repo) => {
   server.listen(PORT, '127.0.0.1', () => {
     console.log(`ultra Git Server running on http://127.0.0.1:${PORT}`);

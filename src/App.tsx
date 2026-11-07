@@ -28,6 +28,7 @@ import { ShelfView } from './components/ShelfView';
 import { CommitBar } from './components/CommitBar';
 import { DiffEditor } from './components/DiffEditor';
 import { BottomBar } from './components/BottomBar';
+import { DirectoryCompareModal } from './components/DirectoryCompareModal';
 import { Layers, Archive, FileText } from 'lucide-react';
 
 const SAVED_PROJECTS_KEY = 'ultra_git_projects';
@@ -79,6 +80,13 @@ export const App: React.FC = () => {
     title: string;
     leftLabel: string;
     rightLabel: string;
+  } | null>(null);
+
+  // Directory comparison modal state
+  const [compareDirsModal, setCompareDirsModal] = useState<{
+    isOpen: boolean;
+    dir1: string;
+    dir2: string;
   } | null>(null);
 
   // Splitter state
@@ -381,6 +389,11 @@ export const App: React.FC = () => {
     }
   };
 
+  // Compare two directories from File Explorer
+  const handleCompareDirectories = (dir1: string, dir2: string) => {
+    setCompareDirsModal({ isOpen: true, dir1, dir2 });
+  };
+
   // Checkbox toggles
   const handleToggleCheck = (path: string) => {
     setCheckedFiles((prev) => {
@@ -537,6 +550,7 @@ export const App: React.FC = () => {
               selectedPath={selectedFile?.path || null}
               onSelectFile={handleSelectExplorerFile}
               onCompareFiles={handleCompareFiles}
+              onCompareDirectories={handleCompareDirectories}
             />
           </div>
 
@@ -750,6 +764,16 @@ export const App: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* WebStorm Style Directory Compare Modal */}
+      {compareDirsModal && compareDirsModal.isOpen && (
+        <DirectoryCompareModal
+          isOpen={compareDirsModal.isOpen}
+          dir1={compareDirsModal.dir1}
+          dir2={compareDirsModal.dir2}
+          onClose={() => setCompareDirsModal(null)}
+        />
       )}
     </div>
   );

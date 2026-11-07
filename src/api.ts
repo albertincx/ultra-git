@@ -1,4 +1,4 @@
-import { GitFile, ChangelistState, ShelfItem, ProjectTab, FsEntry, RecentProject } from './types';
+import { GitFile, ChangelistState, ShelfItem, ProjectTab, FsEntry, RecentProject, DirCompareResult } from './types';
 
 const API_BASE = '/api';
 
@@ -138,6 +138,35 @@ export async function compareTwoFiles(path1: string, path2: string): Promise<{
   const data = await res.json();
   compareCache.set(cacheKey, { ...data, time: Date.now() });
   return data;
+}
+
+export async function compareDirectories(dir1: string, dir2: string): Promise<DirCompareResult> {
+  const res = await fetch(`${API_BASE}/dir/compare?dir1=${encodeURIComponent(dir1)}&dir2=${encodeURIComponent(dir2)}`, {
+    headers: getHeaders(),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to compare directories');
+  }
+  return res.json();
+}
+
+export async function syncDirectoryFile(
+  dir1: string,
+  dir2: string,
+  relPath: string,
+  action: 'copy_to_right' | 'copy_to_left' | 'delete_left' | 'delete_right'
+): Promise<void> {
+  clearCompareCache();
+  const res = await fetch(`${API_BASE}/dir/sync-file`, {
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ dir1, dir2, relPath, action }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to sync directory file');
+  }
 }
 
 export async function saveFileContent(filePath: string, content: string): Promise<void> {

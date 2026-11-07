@@ -48,10 +48,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         NSApplication.shared.activate(ignoringOtherApps: true)
 
         let urlString = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "http://127.0.0.1:3737"
-        if let targetUrl = URL(string: urlString) {
-            var request = URLRequest(url: targetUrl)
-            request.cachePolicy = .reloadIgnoringLocalCacheData
-            webView.load(request)
+
+        // Purge memory and disk cache to guarantee fresh HTML/JS/CSS assets while preserving localStorage/cookies
+        let cacheTypes: Set<String> = [WKWebsiteDataTypeDiskCache, WKWebsiteDataTypeMemoryCache]
+        WKWebsiteDataStore.default().removeData(ofTypes: cacheTypes, modifiedSince: Date.distantPast) {
+            DispatchQueue.main.async {
+                if let targetUrl = URL(string: urlString) {
+                    var request = URLRequest(url: targetUrl)
+                    request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+                    self.webView.load(request)
+                }
+            }
         }
     }
 

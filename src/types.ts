@@ -60,3 +60,28 @@ export interface RecentProject {
   isGit?: boolean;
   lastOpenedAt: number;
 }
+
+export type DirCompareStatus = 'different' | 'left_only' | 'right_only' | 'same';
+
+export interface DirCompareItem {
+  relPath: string;
+  name: string;
+  status: DirCompareStatus;
+  size1: number | null;
+  size2: number | null;
+  mtime1: number | null;
+  mtime2: number | null;
+}
+
+export interface DirCompareResult {
+  dir1: string;
+  dir2: string;
+  items: DirCompareItem[];
+  summary: {
+    total: number;
+    different: number;
+    leftOnly: number;
+    rightOnly: number;
+    same: number;
+  };
+}
