@@ -20,6 +20,7 @@ import {
 import { DirCompareItem, DirCompareResult } from '../types';
 import { compareDirectories, syncDirectoryFile, compareTwoFiles } from '../api';
 import { DiffEditor } from './DiffEditor';
+import { DiffEngineType } from './diff-engines/types';
 
 interface DirectoryCompareModalProps {
   isOpen: boolean;
@@ -78,6 +79,13 @@ export const DirectoryCompareModal: React.FC<DirectoryCompareModalProps> = ({
   // Resizable splitter (vertical split between list and diff)
   const [listHeight, setListHeight] = useState(250);
   const isDraggingSplitter = useRef(false);
+
+  // Directory Compare Diff Engine (Monaco by default for full-fidelity comparison)
+  const [dirDiffEngine, setDirDiffEngine] = useState<DiffEngineType>(() => {
+    const saved = localStorage.getItem('ultra_dir_diff_engine');
+    if (saved === 'codemirror') return 'codemirror';
+    return 'monaco';
+  });
 
   // Toast message
   const [toast, setToast] = useState<string | null>(null);
@@ -923,8 +931,10 @@ export const DirectoryCompareModal: React.FC<DirectoryCompareModalProps> = ({
                   original={diffContent.original}
                   modified={diffContent.modified}
                   compareTitle={`${selectedItem.name} (${selectedItem.relPath})`}
-                  leftLabel={`${leftDisplay}/${selectedItem.relPath}`}
-                  rightLabel={`${rightDisplay}/${selectedItem.relPath}`}
+                  leftLabel={`${leftDisplay}/${selectedItem.relPath}${selectedItem.status === 'right_only' ? ' (Does not exist in left)' : ''}`}
+                  rightLabel={`${rightDisplay}/${selectedItem.relPath}${selectedItem.status === 'left_only' ? ' (Does not exist in right)' : ''}`}
+                  preferredEngine={dirDiffEngine}
+                  onEngineChange={setDirDiffEngine}
                   onSaved={async () => {
                     await loadDiff(selectedItem);
                     await loadComparison();

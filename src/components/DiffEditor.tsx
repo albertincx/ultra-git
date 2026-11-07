@@ -56,18 +56,20 @@ interface DiffEditorProps {
   compareTitle?: string;
   leftLabel?: string;
   rightLabel?: string;
+  preferredEngine?: DiffEngineType;
+  onEngineChange?: (engine: DiffEngineType) => void;
 }
 
 // Custom Gutter Marker for rolling back individual chunk
 class RollbackGutterMarker extends GutterMarker {
-  constructor(public onRevert: () => void) {
+  constructor(public onRevert: () => void, public isCompareMode: boolean = false) {
     super();
   }
 
   toDOM() {
     const btn = document.createElement('button');
     btn.className = 'jb-gutter-revert-btn';
-    btn.title = 'Rollback this change (revert to HEAD)';
+    btn.title = this.isCompareMode ? 'Copy this change from left to right' : 'Rollback this change (revert to HEAD)';
     btn.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 14 4 9 9 4"></polyline><path d="M20 20v-7a4 4 0 0 0-4-4H4"></path></svg>`;
     btn.onmousedown = (e) => {
       e.preventDefault();
@@ -90,6 +92,8 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
   compareTitle,
   leftLabel,
   rightLabel,
+  preferredEngine,
+  onEngineChange,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const mergeViewRef = useRef<MergeView | null>(null);
@@ -121,16 +125,33 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
     }
   }, [isEditorOnly]);
 
-  // Diff Engine state (CodeMirror 6 by default for instant <10ms rendering)
+  // Diff Engine state
   const [diffEngine, setDiffEngine] = useState<DiffEngineType>(() => {
+    if (preferredEngine) return preferredEngine;
+    if (compareTitle) {
+      const dirSaved = localStorage.getItem('ultra_dir_diff_engine');
+      if (dirSaved === 'codemirror') return 'codemirror';
+      return 'monaco';
+    }
     const saved = localStorage.getItem('ultra_diff_engine');
     if (saved === 'monaco') return 'monaco';
     return 'codemirror';
   });
 
+  useEffect(() => {
+    if (preferredEngine && preferredEngine !== diffEngine) {
+      setDiffEngine(preferredEngine);
+    }
+  }, [preferredEngine]);
+
   const handleEngineChange = (engine: DiffEngineType) => {
     setDiffEngine(engine);
-    localStorage.setItem('ultra_diff_engine', engine);
+    if (compareTitle) {
+      localStorage.setItem('ultra_dir_diff_engine', engine);
+    } else {
+      localStorage.setItem('ultra_diff_engine', engine);
+    }
+    onEngineChange?.(engine);
   };
 
   // Search in Diff state
@@ -149,8 +170,14 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
 
   // Determine language extension
   const getLanguageExtension = (path: string) => {
-    if (path.endsWith('.json')) return json();
-    if (path.endsWith('.js') || path.endsWith('.jsx') || path.endsWith('.ts') || path.endsWith('.tsx')) {
+    const target = path.includes(' ↔ ') ? path.split(' ↔ ')[1].trim() : path.trim();
+    if (target.endsWith('.json')) return json();
+    if (
+      target.endsWith('.js') ||
+      target.endsWith('.jsx') ||
+      target.endsWith('.ts') ||
+      target.endsWith('.tsx')
+    ) {
       return javascript({ typescript: true, jsx: true });
     }
     return [];
@@ -506,7 +533,7 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
                     seenLines.add(line.from);
                     markersList.push({
                       pos: line.from,
-                      marker: new RollbackGutterMarker(() => handleRevertChunk(i)),
+                      marker: new RollbackGutterMarker(() => handleRevertChunk(i), Boolean(compareTitle)),
                     });
                   }
                 }
@@ -571,7 +598,7 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
         renderRevertControl: () => {
           const btn = document.createElement('button');
           btn.className = 'jb-revert-chunk-btn';
-          btn.title = 'Rollback this change (revert to HEAD)';
+          btn.title = compareTitle ? 'Copy this change from left to right' : 'Rollback this change (revert to HEAD)';
           btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>`;
           return btn;
         },
@@ -1067,6 +1094,17 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
           <div style={{ flex: 1, paddingLeft: '12px', borderRight: '1px solid var(--jb-border)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {leftLabel || 'HEAD (Committed revision)'}
           </div>
+          {diffEngine === 'codemirror' && (
+            <div
+              style={{
+                width: '26px',
+                flexShrink: 0,
+                background: '#232529',
+                borderRight: '1px solid var(--jb-border)',
+                height: '100%',
+              }}
+            />
+          )}
           <div style={{ flex: 1, paddingLeft: '12px', display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {rightLabel || 'Local Working Copy (Editable)'}

@@ -35,7 +35,8 @@ monaco.editor.defineTheme('jb-dark-diff', {
 });
 
 function getLanguage(filePath: string): string {
-  const ext = filePath.split('.').pop()?.toLowerCase();
+  const target = filePath.includes(' ↔ ') ? filePath.split(' ↔ ')[1].trim() : filePath.trim();
+  const ext = target.split('.').pop()?.toLowerCase();
   switch (ext) {
     case 'js':
     case 'jsx':
@@ -321,9 +322,20 @@ export const MonacoEngine = forwardRef<DiffEngineHandle, DiffEngineProps>(
 
     const safePath = encodeURIComponent(filePath.replace(/[^a-zA-Z0-9_-]/g, '_'));
 
+    // Dispose existing models with same URIs if they exist to prevent model collision
+    useEffect(() => {
+      const origUri = monaco.Uri.parse(`inmemory://model/${safePath}/original`);
+      const modUri = monaco.Uri.parse(`inmemory://model/${safePath}/modified`);
+      const m1 = monaco.editor.getModel(origUri);
+      if (m1) m1.dispose();
+      const m2 = monaco.editor.getModel(modUri);
+      if (m2) m2.dispose();
+    }, [safePath]);
+
     return (
       <div style={{ width: '100%', height: '100%', overflow: 'hidden' }}>
         <MonacoDiffEditor
+          key={`${safePath}_${isUnified}`}
           height="100%"
           language={language}
           original={original}
