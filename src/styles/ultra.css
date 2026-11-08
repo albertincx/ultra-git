@@ -224,7 +224,8 @@ code, pre, .cm-editor {
 .cm-mergeView {
   height: 100% !important;
   max-height: 100% !important;
-  overflow: hidden !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
   background-color: var(--jb-bg) !important;
   color: var(--jb-text) !important;
 }
@@ -233,28 +234,26 @@ code, pre, .cm-editor {
   display: flex !important;
   flex-direction: row !important;
   align-items: stretch !important;
-  height: 100% !important;
   min-height: 100% !important;
   width: 100% !important;
-  overflow: hidden !important;
+  overflow: visible !important;
   overscroll-behavior: none !important;
 }
 
 .cm-mergeViewEditor {
   flex: 1 1 50% !important;
   min-width: 0 !important;
-  height: 100% !important;
-  min-height: 100% !important;
-  overflow: hidden !important;
+  overflow: visible !important;
 }
 
 .cm-mergeViewEditor .cm-editor {
-  height: 100% !important;
+  height: auto !important;
 }
 
 .cm-mergeView .cm-scroller {
-  height: 100% !important;
-  overflow: auto !important;
+  height: auto !important;
+  overflow-y: visible !important;
+  overflow-x: auto !important;
   font-family: 'JetBrains Mono', monospace !important;
   font-size: 13px !important;
   line-height: 1.5 !important;

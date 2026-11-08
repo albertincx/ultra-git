@@ -12,7 +12,7 @@ import {
 import { oneDark } from '@codemirror/theme-one-dark';
 import { javascript } from '@codemirror/lang-javascript';
 import { json } from '@codemirror/lang-json';
-import { MergeView, unifiedMergeView, goToNextChunk, goToPreviousChunk, Chunk } from '@codemirror/merge';
+import { MergeView, unifiedMergeView, getChunks, Chunk } from '@codemirror/merge';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import {
   search,
@@ -58,6 +58,7 @@ interface DiffEditorProps {
   rightLabel?: string;
   preferredEngine?: DiffEngineType;
   onEngineChange?: (engine: DiffEngineType) => void;
+  jumpToLine?: { line: number; column?: number; length?: number } | null;
 }
 
 // Custom Gutter Marker for rolling back individual chunk
@@ -94,6 +95,7 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
   rightLabel,
   preferredEngine,
   onEngineChange,
+  jumpToLine,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const mergeViewRef = useRef<MergeView | null>(null);
@@ -106,7 +108,6 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const [isUnified, setIsUnified] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
-
 
   // Untracked or brand new file with no HEAD original, or user opened file from File Explorer
   const isUntrackedOrNew = !compareTitle && (fileStatus === 'untracked' || (!original && fileStatus === 'added'));
@@ -153,6 +154,61 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
     }
     onEngineChange?.(engine);
   };
+
+  // Jump to specific line/column (e.g. from Find in Files)
+  useEffect(() => {
+    if (!jumpToLine) return;
+    const { line, column = 1, length = 0 } = jumpToLine;
+
+    const performJump = (view: EditorView) => {
+      try {
+        if (line <= view.state.doc.lines) {
+          const lineInfo = view.state.doc.line(line);
+          const from = Math.min(lineInfo.from + Math.max(0, column - 1), lineInfo.to);
+          const to = Math.min(from + Math.max(0, length), lineInfo.to);
+          view.dispatch({
+            selection: { anchor: from, head: to },
+            effects: EditorView.scrollIntoView(from, { y: 'center' }),
+            userEvent: 'select',
+          });
+          view.focus();
+
+          if (view.scrollDOM) {
+            const block = view.lineBlockAt(from);
+            if (block) {
+              const h = view.scrollDOM.clientHeight || 400;
+              view.scrollDOM.scrollTo({ top: Math.max(0, block.top - Math.round(h / 3)), behavior: 'smooth' });
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('performJump error:', e);
+      }
+    };
+
+    const timer = setTimeout(() => {
+      if (mergeViewRef.current) {
+        const mv = mergeViewRef.current;
+        performJump(mv.b);
+        if (mv.dom) {
+          try {
+            const lineInfo = mv.b.state.doc.line(Math.min(line, mv.b.state.doc.lines));
+            const block = mv.b.lineBlockAt(lineInfo.from);
+            if (block) {
+              const h = mv.dom.clientHeight || 400;
+              mv.dom.scrollTo({ top: Math.max(0, block.top - Math.round(h / 3)), behavior: 'smooth' });
+            }
+          } catch {}
+        }
+      } else if (singleEditorRef.current) {
+        performJump(singleEditorRef.current);
+      } else if (unifiedViewRef.current) {
+        performJump(unifiedViewRef.current);
+      }
+    }, 60);
+
+    return () => clearTimeout(timer);
+  }, [jumpToLine, diffEngine]);
 
   // Search in Diff state
   const [showSearch, setShowSearch] = useState(false);
@@ -380,6 +436,97 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
     handleSave(newDoc);
   };
 
+  // Scroll directly to a specific diff chunk
+  const scrollToChunkIndex = useCallback((index: number) => {
+    if (mergeViewRef.current) {
+      const mv = mergeViewRef.current;
+      const chunks = mv.chunks;
+      if (!chunks || chunks.length === 0) return;
+      const safeIndex = ((index % chunks.length) + chunks.length) % chunks.length;
+      setCurrentChunkIndex(safeIndex);
+      const chunk = chunks[safeIndex];
+      if (!chunk) return;
+
+      const posB = chunk.fromB;
+      const endB = Math.max(chunk.fromB, chunk.toB);
+      const posA = chunk.fromA;
+      const endA = Math.max(chunk.fromA, chunk.toA);
+
+      // Select in Editor B and Editor A
+      try {
+        mv.b.dispatch({
+          selection: { anchor: posB, head: Math.min(endB, mv.b.state.doc.length) },
+          effects: EditorView.scrollIntoView(posB, { y: 'center' }),
+          userEvent: 'select.byChunk',
+        });
+        mv.a.dispatch({
+          selection: { anchor: posA, head: Math.min(endA, mv.a.state.doc.length) },
+          effects: EditorView.scrollIntoView(posA, { y: 'center' }),
+          userEvent: 'select.byChunk',
+        });
+      } catch (e) {
+        console.warn('Dispatch selection error:', e);
+      }
+
+      // Smooth scroll container to center the chunk
+      try {
+        const blockB = posB <= mv.b.state.doc.length ? mv.b.lineBlockAt(posB) : null;
+        const blockA = posA <= mv.a.state.doc.length ? mv.a.lineBlockAt(posA) : null;
+        const blockTop = blockB ? blockB.top : blockA ? blockA.top : null;
+
+        if (blockTop !== null) {
+          if (mv.dom) {
+            const h = mv.dom.clientHeight || 400;
+            const targetTop = Math.max(0, blockTop - Math.round(h / 3));
+            mv.dom.scrollTo({ top: targetTop, behavior: 'smooth' });
+          }
+          if (mv.b.scrollDOM && mv.b.scrollDOM !== mv.dom) {
+            const h = mv.b.scrollDOM.clientHeight || 400;
+            const targetTop = Math.max(0, blockTop - Math.round(h / 3));
+            mv.b.scrollDOM.scrollTo({ top: targetTop, behavior: 'smooth' });
+          }
+        }
+      } catch (err) {
+        console.warn('Scroll to chunk DOM error:', err);
+      }
+    } else if (unifiedViewRef.current) {
+      const view = unifiedViewRef.current;
+      const chunkInfo = getChunks(view.state);
+      const chunks = chunkInfo?.chunks;
+      if (!chunks || chunks.length === 0) return;
+      const safeIndex = ((index % chunks.length) + chunks.length) % chunks.length;
+      setCurrentChunkIndex(safeIndex);
+      const chunk = chunks[safeIndex];
+      if (!chunk) return;
+
+      const pos = chunk.fromB;
+      const end = Math.max(chunk.fromB, chunk.toB);
+
+      try {
+        view.dispatch({
+          selection: { anchor: pos, head: Math.min(end, view.state.doc.length) },
+          effects: EditorView.scrollIntoView(pos, { y: 'center' }),
+          userEvent: 'select.byChunk',
+        });
+      } catch (e) {
+        console.warn('Dispatch unified selection error:', e);
+      }
+
+      try {
+        if (view.scrollDOM) {
+          const block = view.lineBlockAt(Math.min(pos, view.state.doc.length));
+          if (block) {
+            const h = view.scrollDOM.clientHeight || 400;
+            const targetTop = Math.max(0, block.top - Math.round(h / 3));
+            view.scrollDOM.scrollTo({ top: targetTop, behavior: 'smooth' });
+          }
+        }
+      } catch (err) {
+        console.warn('Scroll in unified view error:', err);
+      }
+    }
+  }, []);
+
   // Rollback current focused chunk
   const handleRevertCurrentChunk = () => {
     if (diffEngine === 'monaco' && engineRef.current) {
@@ -394,12 +541,15 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
     if (diffEngine === 'monaco' && engineRef.current) {
       engineRef.current.nextDiff();
     } else if (diffEngine === 'codemirror') {
+      let total = 0;
       if (mergeViewRef.current) {
-        goToNextChunk(mergeViewRef.current.b);
-        setCurrentChunkIndex((prev) => (chunkCount > 0 ? (prev + 1) % chunkCount : 0));
+        total = mergeViewRef.current.chunks?.length || 0;
       } else if (unifiedViewRef.current) {
-        goToNextChunk(unifiedViewRef.current);
-        setCurrentChunkIndex((prev) => (chunkCount > 0 ? (prev + 1) % chunkCount : 0));
+        total = getChunks(unifiedViewRef.current.state)?.chunks?.length || 0;
+      }
+      if (total > 0) {
+        const next = (currentChunkIndex + 1) % total;
+        scrollToChunkIndex(next);
       }
     }
   };
@@ -408,12 +558,15 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
     if (diffEngine === 'monaco' && engineRef.current) {
       engineRef.current.prevDiff();
     } else if (diffEngine === 'codemirror') {
+      let total = 0;
       if (mergeViewRef.current) {
-        goToPreviousChunk(mergeViewRef.current.b);
-        setCurrentChunkIndex((prev) => (chunkCount > 0 ? (prev - 1 + chunkCount) % chunkCount : 0));
+        total = mergeViewRef.current.chunks?.length || 0;
       } else if (unifiedViewRef.current) {
-        goToPreviousChunk(unifiedViewRef.current);
-        setCurrentChunkIndex((prev) => (chunkCount > 0 ? (prev - 1 + chunkCount) % chunkCount : 0));
+        total = getChunks(unifiedViewRef.current.state)?.chunks?.length || 0;
+      }
+      if (total > 0) {
+        const prev = (currentChunkIndex - 1 + total) % total;
+        scrollToChunkIndex(prev);
       }
     }
   };
@@ -505,9 +658,13 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
       mergeViewRef.current = null;
       singleEditorRef.current = null;
 
+      const chunkInfo = getChunks(view.state);
+      const total = chunkInfo?.chunks?.length || 0;
+      setChunkCount(total);
+
       setTimeout(() => {
-        goToNextChunk(view);
-      }, 60);
+        scrollToChunkIndex(0);
+      }, 70);
 
       return () => {
         view.destroy();
@@ -615,7 +772,7 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
       setTimeout(() => {
         try {
           if (mergeView && mergeView.chunks && mergeView.chunks.length > 0) {
-            goToNextChunk(mergeView.b);
+            scrollToChunkIndex(0);
           }
         } catch (err) {
           console.warn('Auto-scroll to first chunk error:', err);
@@ -719,7 +876,7 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
                 fontWeight: 500,
               }}
             >
-              {chunkCount} difference{chunkCount !== 1 ? 's' : ''}
+              {chunkCount > 0 ? `${currentChunkIndex + 1} of ${chunkCount}` : '0'} difference{chunkCount !== 1 ? 's' : ''}
             </span>
           )}
 
@@ -1160,6 +1317,7 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
                 onRollback={onRollback}
                 onDiffCount={setChunkCount}
                 isUnified={isUnified}
+                jumpToLine={jumpToLine}
               />
             ) : (
               <></>

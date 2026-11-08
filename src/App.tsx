@@ -30,6 +30,7 @@ import { CommitBar } from './components/CommitBar';
 import { DiffEditor } from './components/DiffEditor';
 import { BottomBar } from './components/BottomBar';
 import { DirectoryCompareModal } from './components/DirectoryCompareModal';
+import { FindToolWindow } from './components/FindToolWindow';
 import { Layers, Archive, FileText } from 'lucide-react';
 
 const SAVED_PROJECTS_KEY = 'ultra_git_projects';
@@ -98,6 +99,58 @@ export const App: React.FC = () => {
   // Splitter state
   const [sidebarWidth, setSidebarWidth] = useState(380);
   const isDraggingSplitter = useRef(false);
+
+  // Find in Files (Bottom Tool Window) state
+  const [isFindOpen, setIsFindOpen] = useState(false);
+  const [findQuery, setFindQuery] = useState('');
+  const [findScope, setFindScope] = useState('');
+  const [findHeight, setFindHeight] = useState(250);
+  const isDraggingFindSplitter = useRef(false);
+  const [jumpToLine, setJumpToLine] = useState<{ line: number; column?: number; length?: number } | null>(null);
+
+  const handleFindSplitterMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    isDraggingFindSplitter.current = true;
+    const startY = e.clientY;
+    const startHeight = findHeight;
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      if (!isDraggingFindSplitter.current) return;
+      const deltaY = startY - moveEvent.clientY;
+      const nextH = Math.max(120, Math.min(window.innerHeight * 0.75, startHeight + deltaY));
+      setFindHeight(nextH);
+    };
+
+    const onMouseUp = () => {
+      isDraggingFindSplitter.current = false;
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  };
+
+  const handleOpenSearchMatch = (filePath: string, line: number, column: number, length: number) => {
+    handleSelectExplorerFile(filePath);
+    setJumpToLine({ line, column, length });
+  };
+
+  // Shortcut to open Find in Files (Cmd+Shift+F or Ctrl+Shift+F)
+  useEffect(() => {
+    const handleGlobalFind = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'f' || e.key === 'F')) {
+        e.preventDefault();
+        setIsFindOpen(true);
+        const sel = window.getSelection()?.toString();
+        if (sel && sel.trim()) {
+          setFindQuery(sel.trim());
+        }
+      }
+    };
+    window.addEventListener('keydown', handleGlobalFind);
+    return () => window.removeEventListener('keydown', handleGlobalFind);
+  }, []);
 
   // Native macOS Terminal launcher
   const handleOpenTerminal = useCallback(() => {
@@ -582,6 +635,10 @@ export const App: React.FC = () => {
               onSelectFile={handleSelectExplorerFile}
               onCompareFiles={handleCompareFiles}
               onCompareDirectories={handleCompareDirectories}
+              onFindInPath={(scopePath) => {
+                setIsFindOpen(true);
+                setFindScope(scopePath);
+              }}
             />
           </div>
 
@@ -688,6 +745,7 @@ export const App: React.FC = () => {
               compareTitle={compareInfo?.title}
               leftLabel={compareInfo?.leftLabel}
               rightLabel={compareInfo?.rightLabel}
+              jumpToLine={jumpToLine}
             />
           ) : (
             <div
@@ -711,9 +769,33 @@ export const App: React.FC = () => {
         </div>
       </div>
 
+      {/* Resizable Bottom Tool Window: Find in Files (WebStorm style) */}
+      {isFindOpen && (
+        <div
+          className="jb-resizer-horizontal"
+          onMouseDown={handleFindSplitterMouseDown}
+          title="Drag to resize Find tool window"
+        />
+      )}
+      {isFindOpen && (
+        <div style={{ height: `${findHeight}px`, minHeight: '120px', maxHeight: '75vh', flexShrink: 0, overflow: 'hidden' }}>
+          <FindToolWindow
+            isOpen={isFindOpen}
+            onClose={() => setIsFindOpen(false)}
+            activeRepoRoot={activeProject?.repoRoot}
+            repoName={activeProject?.repoName}
+            initialQuery={findQuery}
+            initialScope={findScope}
+            onOpenMatch={handleOpenSearchMatch}
+          />
+        </div>
+      )}
+
       {/* JetBrains-style Bottom Status Bar */}
       <BottomBar
         onOpenTerminal={handleOpenTerminal}
+        onToggleFind={() => setIsFindOpen((prev) => !prev)}
+        isFindOpen={isFindOpen}
         activeProject={activeProject || undefined}
         modifiedCount={files.length}
       />

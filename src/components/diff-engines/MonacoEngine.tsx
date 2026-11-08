@@ -88,6 +88,7 @@ export const MonacoEngine = forwardRef<DiffEngineHandle, DiffEngineProps>(
       onSaved,
       onDiffCount,
       isUnified = false,
+      jumpToLine,
     },
     ref
   ) => {
@@ -95,6 +96,29 @@ export const MonacoEngine = forwardRef<DiffEngineHandle, DiffEngineProps>(
     const language = getLanguage(filePath);
     const diffEditorRef = useRef<monaco.editor.IStandaloneDiffEditor | null>(null);
     const singleEditorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
+
+    // Jump to line when requested (e.g. from Find in Files)
+    useEffect(() => {
+      if (!jumpToLine) return;
+      const timer = setTimeout(() => {
+        const ed = singleEditorRef.current || diffEditorRef.current?.getModifiedEditor();
+        if (ed) {
+          ed.revealLineInCenter(jumpToLine.line);
+          const col = jumpToLine.column || 1;
+          ed.setPosition({ lineNumber: jumpToLine.line, column: col });
+          if (jumpToLine.length) {
+            ed.setSelection({
+              startLineNumber: jumpToLine.line,
+              startColumn: col,
+              endLineNumber: jumpToLine.line,
+              endColumn: col + jumpToLine.length,
+            });
+          }
+          ed.focus();
+        }
+      }, 80);
+      return () => clearTimeout(timer);
+    }, [jumpToLine]);
 
     // Revert current diff chunk
     const handleRevertCurrentDiff = () => {

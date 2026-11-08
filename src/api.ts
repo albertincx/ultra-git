@@ -1,4 +1,14 @@
-import { GitFile, ChangelistState, ShelfItem, ProjectTab, FsEntry, RecentProject, DirCompareResult } from './types';
+import {
+  GitFile,
+  ChangelistState,
+  ShelfItem,
+  ProjectTab,
+  FsEntry,
+  RecentProject,
+  DirCompareResult,
+  SearchOptions,
+  SearchResult,
+} from './types';
 
 const API_BASE = '/api';
 
@@ -519,4 +529,23 @@ export async function executeTerminalStream(
       options.onError?.(err.message || 'Stream connection error');
     }
   }
+}
+
+// Full-text project search
+export async function searchProjectFiles(options: SearchOptions): Promise<SearchResult> {
+  const targetRoot = options.repoRoot || activeRepoRoot;
+  const res = await fetch(`${API_BASE}/search`, {
+    method: 'POST',
+    headers: getHeaders(
+      targetRoot
+        ? { 'X-Repo-Path': targetRoot, 'Content-Type': 'application/json' }
+        : { 'Content-Type': 'application/json' }
+    ),
+    body: JSON.stringify(options),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Search failed' }));
+    throw new Error(err.error || 'Failed to search project files');
+  }
+  return res.json();
 }

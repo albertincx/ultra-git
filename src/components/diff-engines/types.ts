@@ -19,4 +19,5 @@ export interface DiffEngineProps {
   onRollback: () => void;
   onDiffCount?: (count: number) => void;
   isUnified?: boolean;
+  jumpToLine?: { line: number; column?: number; length?: number } | null;
 }

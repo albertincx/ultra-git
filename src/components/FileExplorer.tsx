@@ -14,6 +14,7 @@ import {
   FolderSearch,
   GitCompare,
   X,
+  Search,
 } from 'lucide-react';
 import { FsEntry, GitFileStatus } from '../types';
 import { fetchDirEntries, openInFinder, compareTwoFiles, getActiveRepoRoot } from '../api';
@@ -25,6 +26,7 @@ interface FileExplorerProps {
   onSelectFile: (path: string, status?: GitFileStatus) => void;
   onCompareFiles?: (file1: string, file2: string) => void;
   onCompareDirectories?: (dir1: string, dir2: string) => void;
+  onFindInPath?: (scopePath: string) => void;
 }
 
 interface DirCache {
@@ -46,6 +48,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
   onSelectFile,
   onCompareFiles,
   onCompareDirectories,
+  onFindInPath,
 }) => {
   const [cache, setCache] = useState<DirCache>({});
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set(['']));
@@ -460,6 +463,17 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
             </button>
           )}
 
+          {onFindInPath && (
+            <button
+              className="jb-icon-btn"
+              style={{ width: '22px', height: '22px' }}
+              onClick={() => onFindInPath('')}
+              title="Find in Files (Cmd+Shift+F)"
+            >
+              <Search size={12} color="var(--jb-accent)" />
+            </button>
+          )}
+
           <button
             className="jb-icon-btn"
             style={{ width: '22px', height: '22px' }}
@@ -676,6 +690,24 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
               >
                 <GitCompare size={14} />
                 <span>Select for Compare</span>
+              </div>
+              <div className="jb-menu-separator" />
+            </>
+          )}
+
+          {onFindInPath && (
+            <>
+              <div
+                className="jb-menu-item"
+                onClick={() => {
+                  const scope = contextMenu.isDir ? contextMenu.path : '';
+                  setContextMenu(null);
+                  onFindInPath(scope);
+                }}
+              >
+                <Search size={14} color="var(--jb-accent)" />
+                <span>{contextMenu.isDir ? 'Find in Path...' : 'Find in Files...'}</span>
+                <span style={{ fontSize: '10px', color: 'var(--jb-text-dim)', marginLeft: 'auto' }}>⇧⌘F</span>
               </div>
               <div className="jb-menu-separator" />
             </>

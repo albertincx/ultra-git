@@ -97,6 +97,178 @@ async function resolveRepoRoot(req, parsedUrl) {
   return defaultRepoRoot;
 }
 
+// Full-text search engine (ripgrep with git-grep / node fallback)
+async function searchInDirectory(targetDir, query, options = {}) {
+  const startTime = Date.now();
+  const maxMatches = options.maxResults || 2000;
+  const results = new Map();
+  let totalMatches = 0;
+
+  // 1. Try ripgrep (fastest search tool)
+  const rgCandidates = ['/opt/homebrew/bin/rg', '/usr/local/bin/rg', '/usr/bin/rg'];
+  let rgPath = null;
+  for (const c of rgCandidates) {
+    if (fs.existsSync(c)) { rgPath = c; break; }
+  }
+
+  if (rgPath) {
+    try {
+      const args = [
+        '--json',
+        '--max-filesize', '5M',
+        '--glob', '!.git/**',
+        '--glob', '!node_modules/**',
+        '--glob', '!dist/**',
+        '--glob', '!build/**',
+        '--glob', '!.DS_Store',
+      ];
+      if (!options.matchCase) args.push('-i');
+      if (options.wholeWord) args.push('-w');
+      if (!options.isRegex) args.push('-F');
+
+      if (options.fileMask && options.fileMask.trim()) {
+        const masks = options.fileMask.split(/[,;\s]+/).map((s) => s.trim()).filter(Boolean);
+        masks.forEach((m) => {
+          const globPattern = m.startsWith('*') ? m : `*${m}`;
+          args.push('--glob', globPattern);
+        });
+      }
+
+      args.push('-e', query);
+      const searchTarget = options.scope ? path.resolve(targetDir, options.scope) : targetDir;
+      args.push(searchTarget);
+
+      const child = spawn(rgPath, args);
+      let output = '';
+      child.stdout.on('data', (d) => { output += d.toString(); });
+
+      await new Promise((resolve) => {
+        child.on('close', resolve);
+        child.on('error', resolve);
+      });
+
+      const lines = output.split('\n');
+      for (const line of lines) {
+        if (!line.trim() || totalMatches >= maxMatches) break;
+        try {
+          const parsed = JSON.parse(line);
+          if (parsed.type === 'match') {
+            const rawPath = parsed.data.path.text;
+            const relPath = path.relative(targetDir, rawPath);
+            const lineNum = parsed.data.line_number;
+            const lineText = parsed.data.lines.text.replace(/[\r\n]+$/, '');
+            parsed.data.submatches.forEach((sub) => {
+              if (totalMatches >= maxMatches) return;
+              totalMatches++;
+              if (!results.has(relPath)) {
+                results.set(relPath, []);
+              }
+              results.get(relPath).push({
+                line: lineNum,
+                column: sub.start + 1,
+                endColumn: sub.end + 1,
+                matchText: sub.match.text,
+                lineText: lineText.length > 500 ? lineText.slice(0, 500) + '...' : lineText,
+              });
+            });
+          }
+        } catch {}
+      }
+
+      const files = Array.from(results.entries()).map(([filePath, matches]) => ({
+        filePath,
+        fileName: path.basename(filePath),
+        dirPath: path.dirname(filePath) === '.' ? '' : path.dirname(filePath),
+        matches,
+      }));
+
+      return {
+        query,
+        totalMatches,
+        totalFiles: files.length,
+        files,
+        durationMs: Date.now() - startTime,
+        truncated: totalMatches >= maxMatches,
+      };
+    } catch (e) {
+      console.warn('rg search failed, falling back:', e);
+    }
+  }
+
+  // 2. Fallback: Git Grep
+  try {
+    const isGit = await isGitRepo(targetDir);
+    if (isGit) {
+      const gitArgs = ['grep', '-n', '-I', '--untracked', '--exclude-standard'];
+      if (!options.matchCase) gitArgs.push('-i');
+      if (options.wholeWord) gitArgs.push('-w');
+      if (options.isRegex) gitArgs.push('-E');
+      else gitArgs.push('-F');
+      gitArgs.push('-e', query);
+      gitArgs.push('--');
+      if (options.scope) gitArgs.push(options.scope);
+      if (options.fileMask) {
+        const masks = options.fileMask.split(/[,;\s]+/).map((s) => s.trim()).filter(Boolean);
+        masks.forEach((m) => gitArgs.push(m.startsWith('*') ? m : `*${m}`));
+      }
+
+      const stdout = await runGit(targetDir, gitArgs).catch(() => '');
+      if (stdout) {
+        const lines = stdout.split('\n');
+        for (const line of lines) {
+          if (!line.trim() || totalMatches >= maxMatches) break;
+          const firstColon = line.indexOf(':');
+          const secondColon = line.indexOf(':', firstColon + 1);
+          if (firstColon > 0 && secondColon > firstColon) {
+            const relPath = line.slice(0, firstColon);
+            const lineNum = parseInt(line.slice(firstColon + 1, secondColon), 10);
+            const lineText = line.slice(secondColon + 1);
+            const colIndex = options.matchCase
+              ? lineText.indexOf(query)
+              : lineText.toLowerCase().indexOf(query.toLowerCase());
+            totalMatches++;
+            if (!results.has(relPath)) results.set(relPath, []);
+            results.get(relPath).push({
+              line: lineNum,
+              column: colIndex >= 0 ? colIndex + 1 : 1,
+              endColumn: colIndex >= 0 ? colIndex + 1 + query.length : 1,
+              matchText: colIndex >= 0 ? lineText.slice(colIndex, colIndex + query.length) : query,
+              lineText: lineText.length > 500 ? lineText.slice(0, 500) + '...' : lineText,
+            });
+          }
+        }
+      }
+
+      const files = Array.from(results.entries()).map(([filePath, matches]) => ({
+        filePath,
+        fileName: path.basename(filePath),
+        dirPath: path.dirname(filePath) === '.' ? '' : path.dirname(filePath),
+        matches,
+      }));
+
+      return {
+        query,
+        totalMatches,
+        totalFiles: files.length,
+        files,
+        durationMs: Date.now() - startTime,
+        truncated: totalMatches >= maxMatches,
+      };
+    }
+  } catch (e) {
+    console.warn('git grep fallback error:', e);
+  }
+
+  return {
+    query,
+    totalMatches: 0,
+    totalFiles: 0,
+    files: [],
+    durationMs: Date.now() - startTime,
+    truncated: false,
+  };
+}
+
 const MIME_TYPES = {
   '.html': 'text/html',
   '.js': 'application/javascript',
@@ -638,6 +810,41 @@ const server = http.createServer(async (req, res) => {
       });
 
       return sendJson(res, 200, result);
+    }
+
+    // Full-text project search (Find in Files / Path)
+    if (pathname === '/api/search' && (req.method === 'GET' || req.method === 'POST')) {
+      const currentRepo = await resolveRepoRoot(req, parsedUrl);
+      const params = req.method === 'POST' ? await parseJsonBody(req) : parsedUrl.query;
+      const query = (params.query || '').trim();
+
+      if (!query) {
+        return sendJson(res, 200, {
+          query: '',
+          totalMatches: 0,
+          totalFiles: 0,
+          files: [],
+          durationMs: 0,
+        });
+      }
+
+      const matchCase = params.matchCase === true || params.matchCase === 'true';
+      const wholeWord = params.wholeWord === true || params.wholeWord === 'true';
+      const isRegex = params.isRegex === true || params.isRegex === 'true';
+      const fileMask = (params.fileMask || '').trim();
+      const scope = (params.scope || '').trim();
+      const maxResults = parseInt(params.maxResults, 10) || 2000;
+
+      const searchResult = await searchInDirectory(currentRepo, query, {
+        matchCase,
+        wholeWord,
+        isRegex,
+        fileMask,
+        scope,
+        maxResults,
+      });
+
+      return sendJson(res, 200, searchResult);
     }
 
     if (pathname === '/api/status' && req.method === 'GET') {

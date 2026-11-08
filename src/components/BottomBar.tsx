@@ -1,16 +1,22 @@
 import React from 'react';
-import { Terminal, GitBranch, Layers, FolderGit2, Folder } from 'lucide-react';
+import { Terminal, GitBranch, Layers, FolderGit2, Folder, Search } from 'lucide-react';
 import { ProjectTab } from '../types';
 import { openInFinder } from '../api';
 
 interface BottomBarProps {
   onOpenTerminal: () => void;
+  onToggleFind?: () => void;
+  isFindOpen?: boolean;
+  findMatchesCount?: number;
   activeProject?: ProjectTab;
   modifiedCount: number;
 }
 
 export const BottomBar: React.FC<BottomBarProps> = ({
   onOpenTerminal,
+  onToggleFind,
+  isFindOpen = false,
+  findMatchesCount,
   activeProject,
   modifiedCount,
 }) => {
@@ -33,6 +39,55 @@ export const BottomBar: React.FC<BottomBarProps> = ({
     >
       {/* Left tool window toggles */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        {/* Find Tool Window toggle button */}
+        {onToggleFind && (
+          <button
+            onClick={onToggleFind}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '5px',
+              background: isFindOpen ? 'rgba(53, 116, 240, 0.25)' : 'transparent',
+              color: isFindOpen ? '#fff' : 'var(--jb-text)',
+              border: isFindOpen ? '1px solid var(--jb-accent)' : '1px solid transparent',
+              borderRadius: '3px',
+              padding: '2px 7px',
+              cursor: 'pointer',
+              fontSize: '11px',
+              fontWeight: isFindOpen ? 600 : 400,
+              transition: 'background 0.1s, color 0.1s',
+            }}
+            title="Toggle Find in Files Tool Window (Cmd+Shift+F or Ctrl+Shift+F)"
+          >
+            <Search size={12} color="var(--jb-accent)" />
+            <span>Find</span>
+            {findMatchesCount !== undefined && findMatchesCount > 0 && (
+              <span
+                style={{
+                  fontSize: '9px',
+                  background: 'rgba(234, 179, 8, 0.25)',
+                  color: 'var(--jb-git-modified)',
+                  padding: '1px 5px',
+                  borderRadius: '10px',
+                  fontWeight: 700,
+                  lineHeight: '1',
+                }}
+              >
+                {findMatchesCount}
+              </span>
+            )}
+            <span
+              style={{
+                fontSize: '10px',
+                color: 'var(--jb-text-dim)',
+                marginLeft: '2px',
+              }}
+            >
+              ⇧⌘F
+            </span>
+          </button>
+        )}
+
         {/* Native macOS Terminal launcher button */}
         <button
           onClick={onOpenTerminal}

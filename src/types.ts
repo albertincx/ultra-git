@@ -85,3 +85,37 @@ export interface DirCompareResult {
     same: number;
   };
 }
+
+export interface SearchMatch {
+  line: number;
+  column: number;
+  endColumn: number;
+  matchText: string;
+  lineText: string;
+}
+
+export interface SearchFileResult {
+  filePath: string;
+  fileName: string;
+  dirPath: string;
+  matches: SearchMatch[];
+}
+
+export interface SearchResult {
+  query: string;
+  totalMatches: number;
+  totalFiles: number;
+  files: SearchFileResult[];
+  durationMs: number;
+  truncated?: boolean;
+}
+
+export interface SearchOptions {
+  query: string;
+  matchCase?: boolean;
+  wholeWord?: boolean;
+  isRegex?: boolean;
+  fileMask?: string;
+  scope?: string;
+  repoRoot?: string;
+}
