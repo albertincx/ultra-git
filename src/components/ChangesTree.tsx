@@ -38,6 +38,8 @@ interface ChangesTreeProps {
   onDeleteChangelist: (id: string) => void;
   isGit?: boolean;
   onInitGit?: () => void;
+  hideNonGit?: boolean;
+  onToggleHideNonGit?: () => void;
 }
 
 export const ChangesTree: React.FC<ChangesTreeProps> = ({
@@ -56,7 +58,26 @@ export const ChangesTree: React.FC<ChangesTreeProps> = ({
   onDeleteChangelist,
   isGit,
   onInitGit,
+  hideNonGit: hideNonGitProp,
+  onToggleHideNonGit: onToggleHideNonGitProp,
 }) => {
+  const [internalHideNonGit, setInternalHideNonGit] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('ultra_hide_non_git') === 'true';
+    } catch {}
+    return false;
+  });
+
+  const isHideNonGit = hideNonGitProp !== undefined ? hideNonGitProp : internalHideNonGit;
+  const toggleHideNonGit = onToggleHideNonGitProp || (() => {
+    setInternalHideNonGit((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('ultra_hide_non_git', String(next));
+      } catch {}
+      return next;
+    });
+  });
   const [isTreeView, setIsTreeView] = useState(true);
   const [collapsedDirs, setCollapsedDirs] = useState<Set<string>>(new Set());
   const [collapsedChangelists, setCollapsedChangelists] = useState<Set<string>>(new Set());
@@ -85,9 +106,12 @@ export const ChangesTree: React.FC<ChangesTreeProps> = ({
   // Map files by path for fast lookup
   const filesByPath = useMemo(() => {
     const map = new Map<string, GitFile>();
-    files.forEach((f) => map.set(f.path, f));
+    files.forEach((f) => {
+      if (isHideNonGit && f.status === 'untracked') return;
+      map.set(f.path, f);
+    });
     return map;
-  }, [files]);
+  }, [files, isHideNonGit]);
 
   // Build directory tree for a list of file paths
   const buildTree = (paths: string[]): TreeNode[] => {
@@ -363,10 +387,36 @@ export const ChangesTree: React.FC<ChangesTreeProps> = ({
           </button>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          {/* Hide non-git files checkbox */}
+          <div
+            onClick={toggleHideNonGit}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              fontSize: '11px',
+              color: isHideNonGit ? 'var(--jb-text)' : 'var(--jb-text-muted)',
+              cursor: 'pointer',
+              userSelect: 'none',
+              whiteSpace: 'nowrap',
+              padding: '2px 4px',
+              borderRadius: '3px',
+              transition: 'color 0.1s',
+            }}
+            title="Hide untracked (non-git) files from changes"
+          >
+            {isHideNonGit ? (
+              <CheckSquare size={13} color="var(--jb-accent)" style={{ flexShrink: 0 }} />
+            ) : (
+              <Square size={13} color="var(--jb-text-dim)" style={{ flexShrink: 0 }} />
+            )}
+            <span>Hide non-git files</span>
+          </div>
+
           <button
             className="jb-btn-secondary"
-            style={{ padding: '2px 8px', fontSize: '11px' }}
+            style={{ padding: '2px 8px', fontSize: '11px', flexShrink: 0 }}
             disabled={checkedFiles.size === 0}
             onClick={() => onShelveFiles(Array.from(checkedFiles))}
             title="Shelve selected changes"

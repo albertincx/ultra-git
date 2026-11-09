@@ -63,12 +63,31 @@ export const App: React.FC = () => {
   // Tab: Local Changes | Shelf
   const [activeTab, setActiveTab] = useState<'changes' | 'shelf'>('changes');
 
+  // Hide non-git (untracked) files
+  const [hideNonGit, setHideNonGit] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('ultra_hide_non_git') === 'true';
+    } catch {}
+    return false;
+  });
+
+  const handleToggleHideNonGit = useCallback(() => {
+    setHideNonGit((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('ultra_hide_non_git', String(next));
+      } catch {}
+      return next;
+    });
+  }, []);
+
   // File Explorer vs Local Changes Split
   const [explorerHeight, setExplorerHeight] = useState(250);
   const isDraggingHorizontal = useRef(false);
 
   // Git & Changelists
   const [files, setFiles] = useState<GitFile[]>([]);
+  const displayedFiles = hideNonGit ? files.filter((f) => f.status !== 'untracked') : files;
   const [changelistState, setChangelistState] = useState<ChangelistState>({
     activeId: 'default',
     changelists: [],
@@ -197,23 +216,86 @@ export const App: React.FC = () => {
     }
   }, [projects, activeProjectId, activeProject]);
 
+  // Load Diff for a file
+  const loadDiff = useCallback(async (filePath: string) => {
+    try {
+      const content = await fetchFileContent(filePath);
+      setDiffContent({ original: content.original, modified: content.modified });
+    } catch (e) {
+      console.error('Error loading diff:', e);
+    }
+  }, []);
+
+  // Load Status for active project
+  const loadStatus = useCallback(async (targetProj?: ProjectTab | null) => {
+    const proj = targetProj || activeProject;
+    if (!proj) return;
+    try {
+      setActiveRepoRoot(proj.repoRoot);
+      const [status, shelf] = await Promise.all([
+        fetchGitStatus(proj.repoRoot),
+        fetchShelfList(proj.repoRoot),
+      ]);
+
+      if (
+        (status.branch && status.branch !== proj.branch) ||
+        (status.isGit !== undefined && status.isGit !== proj.isGit)
+      ) {
+        setProjects((prev) =>
+          prev.map((p) =>
+            p.id === proj.id
+              ? { ...p, branch: status.branch || p.branch, isGit: status.isGit !== undefined ? status.isGit : p.isGit }
+              : p
+          )
+        );
+      }
+
+      setFiles(status.files);
+      setChangelistState(status.changelists);
+      setShelfItems(shelf);
+
+      setCheckedFiles((prev) => {
+        if (prev.size === 0) {
+          return new Set(status.files.map((f) => f.path));
+        }
+        const currentPaths = new Set(status.files.map((f) => f.path));
+        return new Set(Array.from(prev).filter((p) => currentPaths.has(p)));
+      });
+
+      if (selectedFile) {
+        loadDiff(selectedFile.path);
+      }
+    } catch (e) {
+      console.error('Error loading git status:', e);
+    }
+  }, [activeProject, selectedFile, loadDiff]);
+
   // Centralized project switcher that immediately syncs API, storage, and UI states
   const handleSelectProject = useCallback((id: string) => {
     const target = projects.find((p) => p.id === id);
     if (!target) return;
+
     setActiveRepoRoot(target.repoRoot);
     localStorage.setItem(ACTIVE_PROJECT_KEY, id);
+
+    // If clicking on already active project tab, do not clear files or reset editor!
+    // Simply refresh git status:
+    if (id === activeProjectId) {
+      loadStatus(target);
+      return;
+    }
+
     setActiveProjectId(id);
     setSelectedFile(null);
     setDiffContent(null);
     setCompareInfo(null);
-    setFiles([]);
+    loadStatus(target);
     saveProjectHistory({
       projects,
       activeProjectId: id,
       activeRepoRoot: target.repoRoot,
     });
-  }, [projects]);
+  }, [projects, activeProjectId, loadStatus]);
 
   // Initial Load: initialize default repo tab and sync history
   useEffect(() => {
@@ -294,57 +376,10 @@ export const App: React.FC = () => {
     initDefault();
   }, []);
 
-  // Load Status for active project
-  const loadStatus = useCallback(async (targetProj?: ProjectTab | null) => {
-    const proj = targetProj || activeProject;
-    if (!proj) return;
-    try {
-      setActiveRepoRoot(proj.repoRoot);
-      const [status, shelf] = await Promise.all([
-        fetchGitStatus(proj.repoRoot),
-        fetchShelfList(proj.repoRoot),
-      ]);
-
-      if (
-        (status.branch && status.branch !== proj.branch) ||
-        (status.isGit !== undefined && status.isGit !== proj.isGit)
-      ) {
-        setProjects((prev) =>
-          prev.map((p) =>
-            p.id === proj.id
-              ? { ...p, branch: status.branch || p.branch, isGit: status.isGit !== undefined ? status.isGit : p.isGit }
-              : p
-          )
-        );
-      }
-
-      setFiles(status.files);
-      setChangelistState(status.changelists);
-      setShelfItems(shelf);
-
-      setCheckedFiles((prev) => {
-        if (prev.size === 0) {
-          return new Set(status.files.map((f) => f.path));
-        }
-        const currentPaths = new Set(status.files.map((f) => f.path));
-        return new Set(Array.from(prev).filter((p) => currentPaths.has(p)));
-      });
-
-      if (selectedFile) {
-        loadDiff(selectedFile.path);
-      }
-    } catch (e) {
-      console.error('Error loading git status:', e);
-    }
-  }, [activeProject, selectedFile]);
-
   useEffect(() => {
     if (activeProject) {
       setActiveRepoRoot(activeProject.repoRoot);
       localStorage.setItem(ACTIVE_PROJECT_KEY, activeProject.id);
-      setSelectedFile(null);
-      setDiffContent(null);
-      setCompareInfo(null);
       loadStatus(activeProject);
     }
   }, [activeProjectId]);
@@ -374,7 +409,7 @@ export const App: React.FC = () => {
     setSelectedFile(null);
     setDiffContent(null);
     setCompareInfo(null);
-    setFiles([]);
+    loadStatus(newTab);
   };
 
   // Close Project Tab
@@ -409,15 +444,6 @@ export const App: React.FC = () => {
     }
   };
 
-  // Load Diff for a file
-  const loadDiff = async (filePath: string) => {
-    try {
-      const content = await fetchFileContent(filePath);
-      setDiffContent({ original: content.original, modified: content.modified });
-    } catch (e) {
-      console.error('Error loading diff:', e);
-    }
-  };
 
   const handleSelectFile = (file: GitFile) => {
     setEditorMode('diff');
@@ -660,7 +686,7 @@ export const App: React.FC = () => {
                 onClick={() => setActiveTab('changes')}
               >
                 <Layers size={13} />
-                Local Changes ({files.length})
+                Local Changes ({displayedFiles.length})
               </div>
               <div
                 className={`jb-tab ${activeTab === 'shelf' ? 'active' : ''}`}
@@ -692,6 +718,8 @@ export const App: React.FC = () => {
                       onDeleteChangelist={handleDeleteChangelist}
                       isGit={activeProject?.isGit !== false}
                       onInitGit={handleInitGit}
+                      hideNonGit={hideNonGit}
+                      onToggleHideNonGit={handleToggleHideNonGit}
                     />
                   </div>
                   {activeProject?.isGit !== false && (
@@ -797,7 +825,7 @@ export const App: React.FC = () => {
         onToggleFind={() => setIsFindOpen((prev) => !prev)}
         isFindOpen={isFindOpen}
         activeProject={activeProject || undefined}
-        modifiedCount={files.length}
+        modifiedCount={displayedFiles.length}
       />
 
       {/* Shelve Dialog */}
