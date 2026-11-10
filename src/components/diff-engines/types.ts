@@ -15,7 +15,7 @@ export interface DiffEngineProps {
   modified: string;
   mode?: 'diff' | 'editor';
   onSave: (newContent: string) => void;
-  onSaved: () => void;
+  onSaved: (content?: string) => void;
   onRollback: () => void;
   onDiffCount?: (count: number) => void;
   isUnified?: boolean;

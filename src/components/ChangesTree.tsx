@@ -378,7 +378,7 @@ export const ChangesTree: React.FC<ChangesTreeProps> = ({
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
-          <button className="jb-icon-btn" onClick={onRefresh} title="Refresh Git Status (F5)">
+          <button className="jb-icon-btn" onClick={() => onRefresh()} title="Refresh Git Status (F5)">
             <RotateCw size={13} />
           </button>
           <button

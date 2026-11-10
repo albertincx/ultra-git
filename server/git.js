@@ -193,10 +193,30 @@ export async function saveLocalFileContent(repoRoot, filePath, content) {
   if (!filePath || typeof filePath !== 'string') {
     throw new Error('Valid filePath required');
   }
+  const cleanPath = filePath.trim();
   const resolvedRoot = path.resolve(repoRoot);
-  const fullPath = path.resolve(resolvedRoot, filePath.trim());
-  if (!fullPath.startsWith(resolvedRoot + path.sep)) {
-    throw new Error('Access denied: cannot write outside project root');
+  const fullPath = path.isAbsolute(cleanPath)
+    ? path.resolve(cleanPath)
+    : path.resolve(resolvedRoot, cleanPath);
+
+  let realRoot = resolvedRoot;
+  try {
+    if (fs.existsSync(resolvedRoot)) realRoot = fs.realpathSync(resolvedRoot);
+  } catch {}
+
+  let realTargetDir = path.dirname(fullPath);
+  try {
+    if (fs.existsSync(realTargetDir)) realTargetDir = fs.realpathSync(realTargetDir);
+  } catch {}
+
+  const rootPrefix = resolvedRoot.endsWith(path.sep) ? resolvedRoot : resolvedRoot + path.sep;
+  const realRootPrefix = realRoot.endsWith(path.sep) ? realRoot : realRoot + path.sep;
+
+  const isInside = fullPath.startsWith(rootPrefix) ||
+                   (realTargetDir + path.sep).startsWith(realRootPrefix);
+
+  if (!isInside) {
+    throw new Error(`Access denied: cannot write outside project root (${fullPath})`);
   }
   await fs.promises.mkdir(path.dirname(fullPath), { recursive: true });
   await fs.promises.writeFile(fullPath, content, 'utf8');

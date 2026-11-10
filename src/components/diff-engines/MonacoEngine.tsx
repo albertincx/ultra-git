@@ -230,7 +230,9 @@ export const MonacoEngine = forwardRef<DiffEngineHandle, DiffEngineProps>(
 
       // Save on Cmd+S / Ctrl+S
       modifiedEditor.addCommand(monacoInstance.KeyMod.CtrlCmd | monacoInstance.KeyCode.KeyS, () => {
-        onSaved();
+        const val = modifiedEditor.getValue();
+        onSave(val);
+        onSaved(val);
       });
 
       const updateDiffInfo = () => {
@@ -281,7 +283,9 @@ export const MonacoEngine = forwardRef<DiffEngineHandle, DiffEngineProps>(
       });
 
       editor.addCommand(monacoInstance.KeyMod.CtrlCmd | monacoInstance.KeyCode.KeyS, () => {
-        onSaved();
+        const val = editor.getValue();
+        onSave(val);
+        onSaved(val);
       });
 
       onDiffCount?.(0);

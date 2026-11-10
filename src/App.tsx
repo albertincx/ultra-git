@@ -227,9 +227,11 @@ export const App: React.FC = () => {
   }, []);
 
   // Load Status for active project
-  const loadStatus = useCallback(async (targetProj?: ProjectTab | null) => {
-    const proj = targetProj || activeProject;
-    if (!proj) return;
+  const loadStatus = useCallback(async (targetProj?: ProjectTab | null | unknown) => {
+    const proj = (targetProj && typeof targetProj === 'object' && 'repoRoot' in targetProj && typeof (targetProj as any).repoRoot === 'string')
+      ? (targetProj as ProjectTab)
+      : activeProject;
+    if (!proj || !proj.repoRoot) return;
     try {
       setActiveRepoRoot(proj.repoRoot);
       const [status, shelf] = await Promise.all([
@@ -718,7 +720,7 @@ export const App: React.FC = () => {
                       checkedFiles={checkedFiles}
                       onToggleCheck={handleToggleCheck}
                       onToggleCheckAll={handleToggleCheckAll}
-                      onRefresh={loadStatus}
+                      onRefresh={() => loadStatus()}
                       onCreateChangelist={handleCreateChangelist}
                       onMoveFiles={handleMoveFiles}
                       onShelveFiles={handleOpenShelveDialog}
@@ -757,7 +759,7 @@ export const App: React.FC = () => {
                     setSelectedFile(dummyFile);
                     loadDiff(filePath);
                   }}
-                  onRefresh={loadStatus}
+                  onRefresh={() => loadStatus()}
                 />
               )}
             </div>
@@ -777,7 +779,7 @@ export const App: React.FC = () => {
               modified={diffContent.modified}
               mode={editorMode}
               onToggleMode={() => setEditorMode((prev) => (prev === 'diff' ? 'editor' : 'diff'))}
-              onSaved={loadStatus}
+              onSaved={() => loadStatus()}
               onRollback={() => handleRollback(selectedFile.path, selectedFile.status === 'untracked')}
               compareTitle={compareInfo?.title}
               leftLabel={compareInfo?.leftLabel}

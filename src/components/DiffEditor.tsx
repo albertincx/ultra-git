@@ -240,11 +240,27 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
   };
 
   const handleSave = async (contentToSave?: string) => {
-    const text = contentToSave !== undefined ? contentToSave : currentModified;
+    let text = contentToSave;
+    if (text === undefined) {
+      if (diffEngine === 'codemirror') {
+        if (mergeViewRef.current) {
+          text = mergeViewRef.current.b.state.doc.toString();
+        } else if (singleEditorRef.current) {
+          text = singleEditorRef.current.state.doc.toString();
+        } else if (unifiedViewRef.current) {
+          text = unifiedViewRef.current.state.doc.toString();
+        }
+      }
+      if (text === undefined) {
+        text = currentModified;
+      }
+    }
+
     setIsSaving(true);
     try {
-      const targetSavePath = filePath.includes(' ↔ ') ? filePath.split(' ↔ ')[1] : filePath;
+      const targetSavePath = filePath.includes(' ↔ ') ? filePath.split(' ↔ ')[1].trim() : filePath.trim();
       await saveFileContent(targetSavePath, text);
+      setCurrentModified(text);
       setIsDirty(false);
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 2000);
@@ -256,6 +272,20 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
       setIsSaving(false);
     }
   };
+
+  // Global Ctrl+S / Cmd+S handler
+  useEffect(() => {
+    const handleGlobalSaveKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'S')) {
+        e.preventDefault();
+        e.stopPropagation();
+        handleSave();
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalSaveKey, true);
+    return () => window.removeEventListener('keydown', handleGlobalSaveKey, true);
+  }, [diffEngine, filePath, currentModified]);
 
   // Scroll to match and center line in view
   const scrollToMatch = useCallback((match: { side: 'a' | 'b' | 'single'; from: number; to: number }) => {
@@ -581,6 +611,23 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
 
     const lang = getLanguageExtension(filePath);
 
+    const saveKeymap = keymap.of([
+      {
+        key: 'Mod-s',
+        run: (view) => {
+          handleSave(view.state.doc.toString());
+          return true;
+        },
+      },
+      {
+        key: 'Ctrl-s',
+        run: (view) => {
+          handleSave(view.state.doc.toString());
+          return true;
+        },
+      },
+    ]);
+
     // 1. Untracked / Brand New File OR Editor Mode: Render Single Full-Width Editor
     if (isEditorOnly) {
       setChunkCount(0);
@@ -591,6 +638,7 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
           highlightActiveLineGutter(),
           highlightActiveLine(),
           history(),
+          saveKeymap,
           keymap.of([...defaultKeymap, ...historyKeymap]),
           oneDark,
           lang,
@@ -629,6 +677,7 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
           highlightActiveLineGutter(),
           highlightActiveLine(),
           history(),
+          saveKeymap,
           keymap.of([...defaultKeymap, ...historyKeymap]),
           oneDark,
           lang,
@@ -731,6 +780,7 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
             highlightActiveLineGutter(),
             highlightActiveLine(),
             history(),
+            saveKeymap,
             keymap.of([...defaultKeymap, ...historyKeymap]),
             oneDark,
             lang,
@@ -1313,7 +1363,7 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
                   setCurrentModified(val);
                   setIsDirty(true);
                 }}
-                onSaved={() => handleSave()}
+                onSaved={(val?: string) => handleSave(val)}
                 onRollback={onRollback}
                 onDiffCount={setChunkCount}
                 isUnified={isUnified}

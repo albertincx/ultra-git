@@ -87,6 +87,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
 
+    @objc func saveDocument(_ sender: Any?) {
+        webView?.evaluateJavaScript("window.dispatchEvent(new KeyboardEvent('keydown', { key: 's', metaKey: true, bubbles: true }))", completionHandler: nil)
+    }
+
     func setupMainMenu() {
         let mainMenu = NSMenu()
 
@@ -98,6 +102,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         appMenu.addItem(withTitle: "Quit ultra Git", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appMenuItem.submenu = appMenu
         mainMenu.addItem(appMenuItem)
+
+        // File menu (Save Cmd+S)
+        let fileMenuItem = NSMenuItem()
+        let fileMenu = NSMenu(title: "File")
+        fileMenu.addItem(withTitle: "Save", action: #selector(saveDocument(_:)), keyEquivalent: "s")
+        fileMenuItem.submenu = fileMenu
+        mainMenu.addItem(fileMenuItem)
 
         // Edit menu (Enables Cmd+C, Cmd+V, Cmd+X, Cmd+A in WKWebView inputs!)
         let editMenuItem = NSMenuItem()
