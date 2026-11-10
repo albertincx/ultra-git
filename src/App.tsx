@@ -42,13 +42,13 @@ export const App: React.FC = () => {
     try {
       const saved = localStorage.getItem(SAVED_PROJECTS_KEY);
       if (saved) return JSON.parse(saved);
-    } catch {}
+    } catch { }
     return [];
   });
   const [activeProjectId, setActiveProjectId] = useState<string>(() => {
     try {
       return localStorage.getItem(ACTIVE_PROJECT_KEY) || '';
-    } catch {}
+    } catch { }
     return '';
   });
 
@@ -67,7 +67,7 @@ export const App: React.FC = () => {
   const [hideNonGit, setHideNonGit] = useState<boolean>(() => {
     try {
       return localStorage.getItem('ultra_hide_non_git') === 'true';
-    } catch {}
+    } catch { }
     return false;
   });
 
@@ -76,7 +76,7 @@ export const App: React.FC = () => {
       const next = !prev;
       try {
         localStorage.setItem('ultra_hide_non_git', String(next));
-      } catch {}
+      } catch { }
       return next;
     });
   }, []);
@@ -429,6 +429,14 @@ export const App: React.FC = () => {
 
   // Initialize Git repository for active project
   const handleInitGit = async () => {
+    const currentRoot = (activeProject?.repoRoot || getActiveRepoRoot() || '').trim().replace(/\/+$/, '');
+    if (
+      currentRoot === '/tmp/ultraEmptyDir' ||
+      currentRoot === '/private/tmp/ultraEmptyDir' ||
+      currentRoot.endsWith('/ultraEmptyDir')
+    ) {
+      return;
+    }
     try {
       const res = await initGitRepoApi();
       setProjects((prev) =>
@@ -625,7 +633,7 @@ export const App: React.FC = () => {
       window.removeEventListener('mouseup', handleMouseUp);
     };
   }, []);
-
+  // console.log(activeProject)
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', width: '100vw' }}>
       {/* ultra Project Tabs Top Header */}
@@ -720,6 +728,7 @@ export const App: React.FC = () => {
                       onInitGit={handleInitGit}
                       hideNonGit={hideNonGit}
                       onToggleHideNonGit={handleToggleHideNonGit}
+                      repoRoot={activeProject?.repoRoot}
                     />
                   </div>
                   {activeProject?.isGit !== false && (

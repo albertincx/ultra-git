@@ -20,7 +20,7 @@ import {
   FolderGit2,
 } from 'lucide-react';
 import { GitFile, Changelist, ChangelistState, TreeNode } from '../types';
-import { openInFinder } from '../api';
+import { openInFinder, getActiveRepoRoot } from '../api';
 
 interface ChangesTreeProps {
   files: GitFile[];
@@ -40,6 +40,8 @@ interface ChangesTreeProps {
   onInitGit?: () => void;
   hideNonGit?: boolean;
   onToggleHideNonGit?: () => void;
+  repoRoot?: string;
+  repoPath?: string;
 }
 
 export const ChangesTree: React.FC<ChangesTreeProps> = ({
@@ -60,7 +62,15 @@ export const ChangesTree: React.FC<ChangesTreeProps> = ({
   onInitGit,
   hideNonGit: hideNonGitProp,
   onToggleHideNonGit: onToggleHideNonGitProp,
+  repoRoot,
+  repoPath,
 }) => {
+  const currentPath = (repoRoot || repoPath || getActiveRepoRoot() || '').trim().replace(/\/+$/, '');
+  const isUltraEmptyDir =
+    currentPath === '/tmp/ultraEmptyDir' ||
+    currentPath === '/private/tmp/ultraEmptyDir' ||
+    currentPath.endsWith('/ultraEmptyDir');
+
   const [internalHideNonGit, setInternalHideNonGit] = useState<boolean>(() => {
     try {
       return localStorage.getItem('ultra_hide_non_git') === 'true';
@@ -450,7 +460,7 @@ export const ChangesTree: React.FC<ChangesTreeProps> = ({
           <div style={{ fontSize: '11px', color: 'var(--jb-text-dim)', lineHeight: '1.4' }}>
             You can browse, view, and edit files in the explorer above.
           </div>
-          {onInitGit && (
+          {onInitGit && !isUltraEmptyDir && (
             <button
               className="jb-btn-primary"
               style={{ marginTop: '4px', fontSize: '11px', padding: '4px 12px' }}
