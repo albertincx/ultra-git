@@ -25,7 +25,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const DIST_DIR = path.resolve(__dirname, '../dist');
 
-let defaultRepoRoot = process.cwd();
+let defaultRepoRoot = '/tmp/ultraEmptyDir';
 
 let appVersion = '1.0.0';
 try {
@@ -43,6 +43,7 @@ const activeTerminalProcesses = new Map();
 const terminalSessionCwd = new Map();
 
 async function initRepo(initialPath) {
+  // console.log(initialPath)
   if (initialPath && fs.existsSync(initialPath)) {
     const stat = fs.statSync(initialPath);
     const dir = stat.isDirectory() ? path.resolve(initialPath) : path.dirname(path.resolve(initialPath));
@@ -1245,7 +1246,8 @@ const server = http.createServer(async (req, res) => {
 });
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3737;
-initRepo(process.argv[2] || process.cwd()).then((repo) => {
+
+initRepo(defaultRepoRoot).then((repo) => {
   server.listen(PORT, '127.0.0.1', () => {
     console.log(`ultra Git Server running on http://127.0.0.1:${PORT}`);
     console.log(`Default Git Repo: ${repo}`);

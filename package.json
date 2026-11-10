@@ -9,7 +9,7 @@
     "build": "tsc && vite build",
     "build:mac": "swiftc -O -target arm64-apple-macos11.0 -framework Cocoa -framework WebKit macos/main.swift -o macos/ultraGit",
     "build:app": "swiftc -O -target arm64-apple-macos11.0 -framework Cocoa -framework WebKit macos/main.swift -o macos/ultraGit && mkdir -p 'macos/ultra Git.app/Contents/MacOS' 'macos/ultra Git.app/Contents/Resources' && cp macos/ultraGit 'macos/ultra Git.app/Contents/MacOS/' && cp macos/AppIcon.icns 'macos/ultra Git.app/Contents/Resources/' && cp macos/Info.plist 'macos/ultra Git.app/Contents/'",
-    "build:all": "pnpm run build && pnpm run build:app",
+    "build:all": "pnpm run build && pnpm run build:app && pnpm run build:mac",
     "preview": "vite preview",
     "server": "node server/index.js",
     "start": "node server/index.js & vite"
